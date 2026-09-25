@@ -179,28 +179,21 @@ function Admin() {
     const jobId = crypto.randomUUID();
 
     try {
-      const response = await fetch(
-        "http://localhost:5000/api/videos/create-watchable",
-        {
-          method: "POST",
+      const response = await fetch(api("/api/videos/create-watchable"), {
+        method: "POST",
 
-          headers: {
-            "Content-Type": "application/json",
-
-            Authorization: `Bearer ${token}`,
-          },
-
-          body: JSON.stringify({
-            signedFileUrl: url.trim(),
-
-            title: title.trim(),
-
-            cbc: cbc.trim(),
-
-            jobId,
-          }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-      );
+
+        body: JSON.stringify({
+          signedFileUrl: url.trim(),
+          title: title.trim(),
+          cbc: cbc.trim(),
+          jobId,
+        }),
+      });
 
       const data = await response.json();
 
