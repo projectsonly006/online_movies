@@ -1468,7 +1468,10 @@ export const createWatchableFromWeTransfer = async (req, res) => {
       //   process.env.SERVER_URL ||
       //   `http://localhost:${process.env.PORT || 5000}`;
 
-      const videoUrl = `${serverUrl}/videos/${encodeURIComponent(safeFilename)}`;
+      const serverUrl =
+        process.env.SERVER_URL || "https://online-movies-uebc.onrender.com";
+
+      const videoUrl = `${serverUrl}/videos/${encodeURIComponent(filename)}`;
 
       // ========================================
       // CREATE MONGODB RECORD
