@@ -846,6 +846,24 @@ body {
   transform: translateY(-1px);
 }
 
+.player-controls {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.controls-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.controls-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+}
+
 /* ==========================================
    RESPONSIVE
 ========================================== */
@@ -917,6 +935,34 @@ body {
   .player-button {
     width: 32px;
     height: 32px;
+  }
+}
+
+@media (max-width: 768px) {
+  .custom-video-player {
+    touch-action: manipulation;
+  }
+
+  .video-player {
+    touch-action: manipulation;
+  }
+
+  .player-controls {
+    padding: 32px 8px max(10px, env(safe-area-inset-bottom));
+  }
+
+  .video-progress {
+    height: 6px;
+  }
+
+  .video-progress::-webkit-slider-thumb {
+    width: 15px;
+    height: 15px;
+  }
+
+  .video-progress::-moz-range-thumb {
+    width: 15px;
+    height: 15px;
   }
 }
 

@@ -17,6 +17,7 @@ function Watch() {
 
   const videoRef = useRef(null);
   const progressRef = useRef(null);
+  const controlsTimerRef = useRef(null);
 
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -26,6 +27,7 @@ function Watch() {
   const [playbackRate, setPlaybackRate] = useState(1);
   const [fullscreen, setFullscreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showControls, setShowControls] = useState(true);
 
   // ==========================================
   // FETCH VIDEO
@@ -34,8 +36,8 @@ function Watch() {
   useEffect(() => {
     const fetchVideo = async () => {
       try {
-        // const API_URL = import.meta.env.VITE_API_URL;
-        // const response = await fetch(`http://localhost:5000/api/videos/${id}`);
+        setLoading(true);
+        setError("");
 
         const response = await fetch(api(`/api/videos/${id}`));
         const data = await response.json();
@@ -58,6 +60,46 @@ function Watch() {
 
     fetchVideo();
   }, [id]);
+
+  // ==========================================
+  // CLEANUP CONTROL TIMER
+  // ==========================================
+
+  useEffect(() => {
+    return () => {
+      if (controlsTimerRef.current) {
+        clearTimeout(controlsTimerRef.current);
+      }
+    };
+  }, []);
+
+  // ==========================================
+  // AUTO-HIDE CONTROLS
+  // ==========================================
+
+  const showPlayerControls = () => {
+    setShowControls(true);
+
+    if (controlsTimerRef.current) {
+      clearTimeout(controlsTimerRef.current);
+    }
+
+    if (videoRef.current && !videoRef.current.paused) {
+      controlsTimerRef.current = setTimeout(() => {
+        setShowControls(false);
+        setShowSettings(false);
+      }, 3000);
+    }
+  };
+
+  const hidePlayerControls = () => {
+    if (controlsTimerRef.current) {
+      clearTimeout(controlsTimerRef.current);
+    }
+
+    setShowControls(false);
+    setShowSettings(false);
+  };
 
   // ==========================================
   // FORMAT TIME
@@ -111,10 +153,27 @@ function Watch() {
 
   const handlePlay = () => {
     setPlaying(true);
+
+    setShowControls(true);
+
+    if (controlsTimerRef.current) {
+      clearTimeout(controlsTimerRef.current);
+    }
+
+    controlsTimerRef.current = setTimeout(() => {
+      setShowControls(false);
+      setShowSettings(false);
+    }, 3000);
   };
 
   const handlePause = () => {
     setPlaying(false);
+
+    if (controlsTimerRef.current) {
+      clearTimeout(controlsTimerRef.current);
+    }
+
+    setShowControls(true);
   };
 
   const handleLoadedMetadata = () => {
@@ -133,6 +192,17 @@ function Watch() {
     setCurrentTime(videoRef.current.currentTime || 0);
   };
 
+  const handleVideoEnded = () => {
+    setPlaying(false);
+
+    if (controlsTimerRef.current) {
+      clearTimeout(controlsTimerRef.current);
+    }
+
+    setShowControls(true);
+    setShowSettings(false);
+  };
+
   // ==========================================
   // SEEK
   // ==========================================
@@ -146,6 +216,8 @@ function Watch() {
 
     videoRef.current.currentTime = value;
     setCurrentTime(value);
+
+    showPlayerControls();
   };
 
   // ==========================================
@@ -164,6 +236,8 @@ function Watch() {
         videoRef.current.currentTime + seconds,
       ),
     );
+
+    showPlayerControls();
   };
 
   // ==========================================
@@ -185,6 +259,7 @@ function Watch() {
     }
 
     setVolume(value);
+    showPlayerControls();
   };
 
   // ==========================================
@@ -199,6 +274,8 @@ function Watch() {
     videoRef.current.muted = !videoRef.current.muted;
 
     setMuted(videoRef.current.muted);
+
+    showPlayerControls();
   };
 
   // ==========================================
@@ -214,6 +291,8 @@ function Watch() {
 
     setPlaybackRate(rate);
     setShowSettings(false);
+
+    showPlayerControls();
   };
 
   // ==========================================
@@ -238,6 +317,8 @@ function Watch() {
     } catch (error) {
       console.error("FULLSCREEN ERROR:", error);
     }
+
+    showPlayerControls();
   };
 
   // ==========================================
@@ -247,6 +328,12 @@ function Watch() {
   useEffect(() => {
     const handleFullscreenChange = () => {
       setFullscreen(Boolean(document.fullscreenElement));
+
+      if (document.fullscreenElement) {
+        showPlayerControls();
+      } else {
+        setShowControls(true);
+      }
     };
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -262,7 +349,6 @@ function Watch() {
 
   useEffect(() => {
     const handleKeyboard = (event) => {
-      // Don't interfere with inputs/buttons
       if (
         event.target.tagName === "INPUT" ||
         event.target.tagName === "TEXTAREA" ||
@@ -280,6 +366,7 @@ function Watch() {
         case "k":
           event.preventDefault();
           togglePlay();
+          showPlayerControls();
           break;
 
         case "arrowleft":
@@ -380,13 +467,6 @@ function Watch() {
 
   const displayDuration = videoDuration || duration;
 
-  const sizeMB = Number(video.size || 0) / (1024 * 1024);
-
-  const formattedSize =
-    sizeMB >= 1024
-      ? `${(sizeMB / 1024).toFixed(2)} GB`
-      : `${sizeMB.toFixed(2)} MB`;
-
   const format = (video.format || "mp4").toUpperCase();
 
   const progressPercentage =
@@ -410,38 +490,41 @@ function Watch() {
 
           <div className="watch-brand">
             <div className="watch-logo">▶</div>
-
-            {/* <span>Video Link App</span> */}
           </div>
         </header>
 
         {/* VIDEO CARD */}
 
         <section className="watch-card">
-          {/* ======================================
-              CUSTOM VIDEO PLAYER
-          ====================================== */}
+          {/* CUSTOM VIDEO PLAYER */}
 
           <div
             className={`custom-video-player ${
               fullscreen ? "is-fullscreen" : ""
             }`}
+            onMouseMove={showPlayerControls}
+            onTouchStart={showPlayerControls}
           >
+            {/* VIDEO */}
+
             <video
               ref={videoRef}
               className="video-player"
               preload="metadata"
-              // src={`http://localhost:5000/api/videos/stream/${video.id}`}
               src={api(`/api/videos/stream/${video.id}`)}
               controls={false}
               controlsList="nodownload"
               disablePictureInPicture
+              playsInline
               onPlay={handlePlay}
               onPause={handlePause}
               onLoadedMetadata={handleLoadedMetadata}
               onTimeUpdate={handleTimeUpdate}
-              onEnded={() => setPlaying(false)}
-              onClick={togglePlay}
+              onEnded={handleVideoEnded}
+              onClick={() => {
+                togglePlay();
+                showPlayerControls();
+              }}
             />
 
             {/* CENTER PLAY BUTTON */}
@@ -450,6 +533,7 @@ function Watch() {
               <button
                 className="center-play-button"
                 onClick={togglePlay}
+                onTouchStart={showPlayerControls}
                 aria-label="Play video"
               >
                 <span className="center-play-icon">▶</span>
@@ -458,7 +542,19 @@ function Watch() {
 
             {/* CONTROLS */}
 
-            <div className="player-controls">
+            <div
+              className={`player-controls ${
+                showControls ? "controls-visible" : "controls-hidden"
+              }`}
+              onClick={(event) => {
+                event.stopPropagation();
+                showPlayerControls();
+              }}
+              onTouchStart={(event) => {
+                event.stopPropagation();
+                showPlayerControls();
+              }}
+            >
               {/* PROGRESS */}
 
               <div className="progress-container">
@@ -541,13 +637,18 @@ function Watch() {
                   </span>
                 </div>
 
+                {/* RIGHT CONTROLS */}
+
                 <div className="controls-right">
                   {/* SETTINGS */}
 
                   <div className="settings-container">
                     <button
                       className="player-button settings-button"
-                      onClick={() => setShowSettings(!showSettings)}
+                      onClick={() => {
+                        setShowSettings((current) => !current);
+                        showPlayerControls();
+                      }}
                       title="Settings"
                     >
                       ⚙
@@ -581,7 +682,7 @@ function Watch() {
                     onClick={toggleFullscreen}
                     title="Fullscreen"
                   >
-                    {fullscreen ? "⛶" : "⛶"}
+                    ⛶
                   </button>
                 </div>
               </div>
@@ -629,41 +730,13 @@ function Watch() {
 
                 <div>
                   <p>
-                    <strong> {video.cbc || "N/A"} </strong>
+                    <strong>{video.cbc || "N/A"}</strong>
+
                     <span> Rating </span>
                   </p>
                 </div>
               </div>
-
-              {/* SIZE */}
-
-              {/* <div className="video-detail">
-                <div className="detail-icon size-icon">⇩</div>
-
-                <div>
-                  <span>File Size</span>
-
-                  <strong>{formattedSize}</strong>
-                </div>
-              </div> */}
             </div>
-
-            {/* VIDEO URL */}
-
-            {/* <div className="video-url-box">
-              <span className="url-label">Video URL</span>
-
-              <div className="url-row">
-                <span className="video-url">{video.videoUrl}</span>
-
-                <button
-                  className="copy-button"
-                  onClick={() => navigator.clipboard.writeText(video.videoUrl)}
-                >
-                  Copy
-                </button>
-              </div>
-            </div> */}
           </div>
         </section>
 
