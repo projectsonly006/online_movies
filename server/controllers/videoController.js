@@ -208,9 +208,11 @@ export const createLocalVideo = async (req, res) => {
 
       publicId: `local-${Date.now()}`,
 
-      videoUrl:
-        `http://localhost:${process.env.PORT || 5000}` +
-        `/videos/${encodeURIComponent(safeFilename)}`,
+      // videoUrl:
+      //   `http://localhost:${process.env.PORT || 5000}` +
+      //   `/videos/${encodeURIComponent(safeFilename)}`,
+
+      videoUrl: `https://online-movies-uebc.onrender.com/videos/${encodeURIComponent(safeFilename)}`,
 
       thumbnailUrl: "",
 
@@ -836,8 +838,10 @@ export const testDownloadVideo = async (req, res) => {
 
     const extension = path.extname(safeFilename).replace(".", "").toLowerCase();
 
+    // const videoUrl =`http://localhost:${process.env.PORT || 5000}` +`/videos/${encodeURIComponent(safeFilename)}`;
+
     const videoUrl =
-      `http://localhost:${process.env.PORT || 5000}` +
+      `https://online-movies-uebc.onrender.com` +
       `/videos/${encodeURIComponent(safeFilename)}`;
 
     const newVideo = await Video.create({
@@ -1166,8 +1170,12 @@ export const createVideoFromWeTransfer = async (req, res) => {
     // VIDEO URL
     // ==========================================
 
+    // const videoUrl =
+    //   `http://localhost:${process.env.PORT || 5000}` +
+    //   `/videos/${encodeURIComponent(safeFilename)}`;
+
     const videoUrl =
-      `http://localhost:${process.env.PORT || 5000}` +
+      `https://online-movies-uebc.onrender.com` +
       `/videos/${encodeURIComponent(safeFilename)}`;
 
     // ==========================================
@@ -1456,9 +1464,9 @@ export const createWatchableFromWeTransfer = async (req, res) => {
       // VIDEO URL
       // ========================================
 
-      const serverUrl =
-        process.env.SERVER_URL ||
-        `http://localhost:${process.env.PORT || 5000}`;
+      // const serverUrl =
+      //   process.env.SERVER_URL ||
+      //   `http://localhost:${process.env.PORT || 5000}`;
 
       const videoUrl = `${serverUrl}/videos/${encodeURIComponent(safeFilename)}`;
 
