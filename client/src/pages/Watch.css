@@ -1,0 +1,957 @@
+@import url("https://fonts.googleapis.com/css2?family=Cedarville+Cursive&family=Livvic:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,900&family=Modak&family=Mulish:ital,wght@0,200..1000;1,200..1000&display=swap");
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Mulish", sans-serif;
+}
+/* ==========================================
+   WATCH PAGE
+========================================== */
+
+.watch-page {
+  width: 100%;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(99, 102, 241, 0.12),
+      transparent 35%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgba(59, 130, 246, 0.1),
+      transparent 35%
+    ),
+    #f5f7fb;
+  color: #111827;
+  padding: 30px 20px;
+  box-sizing: border-box;
+}
+
+.watch-container {
+  width: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+/* ==========================================
+   HEADER
+========================================== */
+
+.watch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 25px;
+}
+
+.back-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: #ffffff;
+  color: #374151;
+  padding: 11px 17px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(15, 23, 42, 0.07);
+  transition: all 0.2s ease;
+}
+
+.back-button:hover {
+  background: #eef2ff;
+  color: #4f46e5;
+  transform: translateX(-2px);
+}
+
+.watch-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #111827;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.watch-logo {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.25);
+  font-size: 15px;
+}
+
+/* ==========================================
+   VIDEO CARD
+========================================== */
+
+.watch-card {
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 22px;
+  box-shadow:
+    0 20px 50px rgba(15, 23, 42, 0.08),
+    0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+/* ==========================================
+   CUSTOM VIDEO PLAYER
+========================================== */
+
+.custom-video-player {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000000;
+  overflow: hidden;
+  user-select: none;
+}
+
+.custom-video-player:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+}
+
+.custom-video-player:fullscreen .video-player {
+  width: 100%;
+  height: 100%;
+}
+
+.video-player {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000000;
+  cursor: pointer;
+}
+
+/* ==========================================
+   CENTER PLAY
+========================================== */
+
+.center-play-button {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+
+  width: 74px;
+  height: 74px;
+
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(79, 70, 229, 0.95);
+  color: #fff;
+
+  font-size: 27px;
+  line-height: 1;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 10px 35px rgba(0, 0, 0, 0.45),
+    0 0 0 8px rgba(255, 255, 255, 0.12);
+
+  transition:
+    transform 0.2s ease,
+    background 0.2s ease;
+}
+
+.center-play-button:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+  background: #6366f1;
+}
+
+.center-play-icon {
+  display: block;
+  line-height: 1;
+  transform: translateX(4px);
+}
+
+.center-play-button:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+  background: #6366f1;
+}
+
+/* ==========================================
+   PLAYER CONTROLS
+========================================== */
+
+.player-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+
+  padding: 35px 16px 12px;
+
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.88),
+    rgba(0, 0, 0, 0.55),
+    transparent
+  );
+
+  color: #ffffff;
+}
+
+/* ==========================================
+   PROGRESS
+========================================== */
+
+.progress-container {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.video-progress {
+  width: 100%;
+  height: 5px;
+
+  appearance: none;
+  -webkit-appearance: none;
+
+  border-radius: 10px;
+
+  cursor: pointer;
+
+  background: linear-gradient(
+    to right,
+    #6366f1 0%,
+    #6366f1 var(--progress),
+    rgba(255, 255, 255, 0.3) var(--progress),
+    rgba(255, 255, 255, 0.3) 100%
+  );
+
+  outline: none;
+}
+
+.video-progress::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+
+  width: 13px;
+  height: 13px;
+
+  border-radius: 50%;
+  border: none;
+
+  background: #ffffff;
+
+  cursor: pointer;
+
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
+}
+
+.video-progress::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+
+  border-radius: 50%;
+  border: none;
+
+  background: #ffffff;
+
+  cursor: pointer;
+}
+
+/* ==========================================
+   CONTROLS ROW
+========================================== */
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.controls-left,
+.controls-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.player-button {
+  width: 36px;
+  height: 36px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: none;
+  border-radius: 7px;
+
+  background: transparent;
+  color: #ffffff;
+
+  font-size: 17px;
+
+  cursor: pointer;
+
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.player-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.player-button:active {
+  transform: scale(0.92);
+}
+
+.skip-button {
+  font-size: 21px;
+}
+
+/* ==========================================
+   VOLUME
+========================================== */
+
+.volume-slider {
+  width: 75px;
+  height: 4px;
+
+  appearance: none;
+  -webkit-appearance: none;
+
+  border-radius: 10px;
+
+  outline: none;
+
+  cursor: pointer;
+
+  background: linear-gradient(
+    to right,
+    #ffffff 0%,
+    #ffffff var(--volume),
+    rgba(255, 255, 255, 0.35) var(--volume),
+    rgba(255, 255, 255, 0.35) 100%
+  );
+}
+
+.volume-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+
+  width: 11px;
+  height: 11px;
+
+  border-radius: 50%;
+
+  background: #ffffff;
+
+  border: none;
+
+  cursor: pointer;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+
+  border-radius: 50%;
+
+  background: #ffffff;
+
+  border: none;
+
+  cursor: pointer;
+}
+
+/* ==========================================
+   TIME
+========================================== */
+
+.player-time {
+  margin-left: 5px;
+
+  color: #ffffff;
+
+  font-size: 13px;
+  font-weight: 500;
+
+  white-space: nowrap;
+}
+
+/* ==========================================
+   SETTINGS
+========================================== */
+
+.settings-container {
+  position: relative;
+}
+
+.settings-button {
+  font-size: 21px;
+}
+
+.settings-menu {
+  position: absolute;
+
+  right: 0;
+  bottom: 48px;
+
+  width: 155px;
+
+  padding: 8px;
+
+  background: rgba(20, 20, 20, 0.97);
+
+  border: 1px solid rgba(255, 255, 255, 0.12);
+
+  border-radius: 10px;
+
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.45);
+
+  z-index: 20;
+}
+
+.settings-title {
+  padding: 8px 10px;
+
+  color: #9ca3af;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.settings-option {
+  display: block;
+
+  width: 100%;
+
+  border: none;
+
+  padding: 9px 10px;
+
+  border-radius: 7px;
+
+  background: transparent;
+
+  color: #ffffff;
+
+  text-align: left;
+
+  font-size: 13px;
+
+  cursor: pointer;
+}
+
+.settings-option:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.settings-option.active {
+  background: rgba(99, 102, 241, 0.35);
+  color: #ffffff;
+}
+
+/* ==========================================
+   VIDEO INFORMATION
+========================================== */
+
+.video-info {
+  padding: 30px;
+}
+
+.video-title-section {
+  margin-bottom: 25px;
+}
+
+.video-label {
+  display: inline-block;
+  margin-bottom: 8px;
+
+  color: #6366f1;
+
+  font-size: 11px;
+  font-weight: 800;
+
+  letter-spacing: 1.5px;
+}
+
+.video-title-section h1 {
+  margin: 0;
+
+  color: #111827;
+
+  font-size: 25px;
+  line-height: 1.25;
+
+  font-weight: 750;
+
+  word-break: break-word;
+}
+
+/* ==========================================
+   VIDEO DETAILS
+========================================== */
+
+.video-details {
+  display: grid;
+
+  grid-template-columns: repeat(3, 1fr);
+
+  gap: 15px;
+
+  margin-bottom: 25px;
+}
+
+.video-detail {
+  display: flex;
+  align-items: center;
+
+  gap: 13px;
+
+  min-width: 0;
+
+  padding: 0px;
+
+  background: #f8fafc;
+
+  border: 1px solid #e5e7eb;
+
+  border-radius: 15px;
+
+  transition: all 0.2s ease;
+}
+
+.video-detail:hover {
+  border-color: #c7d2fe;
+
+  background: #f5f7ff;
+
+  transform: translateY(-2px);
+}
+
+.detail-icon {
+  width: 42px;
+  height: 42px;
+
+  flex-shrink: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 12px;
+
+  font-size: 19px;
+  font-weight: bold;
+}
+
+.duration-icon {
+  color: #4f46e5;
+  background: #eef2ff;
+}
+
+.format-icon {
+  color: #7c3aed;
+  background: #f3e8ff;
+}
+
+.size-icon {
+  color: #0284c7;
+  background: #e0f2fe;
+}
+
+.video-detail div:last-child {
+  display: flex;
+  flex-direction: column;
+
+  gap: 4px;
+
+  min-width: 0;
+}
+
+.video-detail span {
+  color: #6b7280;
+
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.video-detail strong {
+  color: #111827;
+
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* ==========================================
+   VIDEO URL
+========================================== */
+
+.video-url-box {
+  padding: 18px;
+
+  background: #f8fafc;
+
+  border: 1px solid #e5e7eb;
+
+  border-radius: 15px;
+}
+
+.url-label {
+  display: block;
+
+  margin-bottom: 9px;
+
+  color: #6b7280;
+
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.url-row {
+  display: flex;
+  align-items: center;
+
+  gap: 10px;
+}
+
+.video-url {
+  flex: 1;
+
+  min-width: 0;
+
+  padding: 11px 13px;
+
+  background: #ffffff;
+
+  border: 1px solid #e5e7eb;
+
+  border-radius: 10px;
+
+  color: #4b5563;
+
+  font-size: 13px;
+
+  overflow: hidden;
+
+  text-overflow: ellipsis;
+
+  white-space: nowrap;
+}
+
+.copy-button {
+  flex-shrink: 0;
+
+  border: none;
+
+  border-radius: 10px;
+
+  padding: 11px 17px;
+
+  background: #111827;
+
+  color: #ffffff;
+
+  font-size: 13px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition: all 0.2s ease;
+}
+
+.copy-button:hover {
+  background: #4f46e5;
+
+  transform: translateY(-1px);
+}
+
+/* ==========================================
+   FOOTER
+========================================== */
+
+.watch-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 8px;
+
+  margin-top: 20px;
+
+  color: #6b7280;
+
+  font-size: 13px;
+}
+
+.online-dot {
+  width: 8px;
+  height: 8px;
+
+  border-radius: 50%;
+
+  background: #22c55e;
+
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+}
+
+/* ==========================================
+   LOADING
+========================================== */
+
+.watch-loading {
+  min-height: 70vh;
+
+  display: flex;
+  flex-direction: column;
+
+  align-items: center;
+  justify-content: center;
+
+  text-align: center;
+}
+
+.watch-spinner {
+  width: 46px;
+  height: 46px;
+
+  border: 4px solid #e5e7eb;
+
+  border-top-color: #4f46e5;
+
+  border-radius: 50%;
+
+  animation: watchSpin 0.8s linear infinite;
+
+  margin-bottom: 20px;
+}
+
+.watch-loading h2 {
+  margin: 0 0 7px;
+
+  color: #111827;
+}
+
+.watch-loading p {
+  margin: 0;
+
+  color: #6b7280;
+}
+
+@keyframes watchSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================
+   ERROR
+========================================== */
+
+.watch-error {
+  width: 100%;
+  max-width: 500px;
+
+  margin: 100px auto;
+
+  padding: 40px 30px;
+
+  box-sizing: border-box;
+
+  text-align: center;
+
+  background: #ffffff;
+
+  border: 1px solid #e5e7eb;
+
+  border-radius: 20px;
+
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+}
+
+.error-circle {
+  width: 55px;
+  height: 55px;
+
+  margin: 0 auto 18px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  background: #fee2e2;
+
+  color: #dc2626;
+
+  font-size: 25px;
+  font-weight: 800;
+}
+
+.watch-error h2 {
+  margin: 0 0 10px;
+
+  color: #111827;
+}
+
+.watch-error p {
+  margin: 0 0 25px;
+
+  color: #6b7280;
+
+  line-height: 1.6;
+}
+
+.watch-error button {
+  border: none;
+
+  padding: 12px 20px;
+
+  border-radius: 10px;
+
+  background: #4f46e5;
+
+  color: #ffffff;
+
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition: 0.2s ease;
+}
+
+.watch-error button:hover {
+  background: #4338ca;
+
+  transform: translateY(-1px);
+}
+
+/* ==========================================
+   RESPONSIVE
+========================================== */
+
+@media (max-width: 768px) {
+  .watch-page {
+    padding: 18px 12px;
+  }
+
+  .watch-header {
+    margin-bottom: 16px;
+  }
+
+  .watch-brand {
+    font-size: 15px;
+  }
+
+  .watch-logo {
+    width: 34px;
+    height: 34px;
+  }
+
+  .back-button {
+    padding: 9px 12px;
+  }
+
+  .watch-card {
+    border-radius: 16px;
+  }
+
+  .video-info {
+    padding: 20px;
+  }
+
+  .video-title-section h1 {
+    font-size: 22px;
+  }
+
+  .video-details {
+    grid-template-columns: 1fr;
+  }
+
+  .url-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .video-url {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .copy-button {
+    width: 100%;
+  }
+
+  .volume-slider {
+    display: none;
+  }
+
+  .player-time {
+    font-size: 11px;
+  }
+
+  .skip-button {
+    display: none;
+  }
+
+  .player-button {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .watch-brand span {
+    display: none;
+  }
+
+  .video-info {
+    padding: 16px;
+  }
+
+  .video-title-section h1 {
+    font-size: 20px;
+  }
+
+  .video-detail {
+    padding: 14px;
+  }
+
+  .player-controls {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .controls-left,
+  .controls-right {
+    gap: 1px;
+  }
+
+  .player-time {
+    margin-left: 2px;
+  }
+
+  .settings-menu {
+    right: -5px;
+  }
+}

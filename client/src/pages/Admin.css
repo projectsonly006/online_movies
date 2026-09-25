@@ -1,0 +1,603 @@
+/* ==========================================
+   ADMIN PAGE
+========================================== */
+
+.admin-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(99, 102, 241, 0.12),
+      transparent 35%
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(168, 85, 247, 0.1),
+      transparent 30%
+    ),
+    #080b12;
+  color: #ffffff;
+  padding: 40px 20px;
+  box-sizing: border-box;
+}
+
+.admin-container {
+  width: 100%;
+  max-width: 1050px;
+  margin: 0 auto;
+}
+
+/* ==========================================
+   HEADER
+========================================== */
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 25px;
+  margin-bottom: 32px;
+}
+
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.admin-logo {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 14px;
+
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+
+  color: white;
+  font-size: 20px;
+
+  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.3);
+}
+
+.admin-brand h1 {
+  margin: 0;
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.admin-brand p {
+  margin: 5px 0 0;
+  color: #8d95a7;
+  font-size: 14px;
+}
+
+/* ==========================================
+   ACCOUNT
+========================================== */
+
+.admin-account {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.admin-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.admin-user-label {
+  color: #737b8d;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.admin-user strong {
+  color: #e8eaf0;
+  font-size: 14px;
+}
+
+.logout-button {
+  border: 1px solid #2a3040;
+  background: #121722;
+  color: #cbd0dc;
+
+  padding: 10px 17px;
+
+  border-radius: 9px;
+
+  cursor: pointer;
+
+  font-size: 13px;
+  font-weight: 600;
+
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.logout-button:hover {
+  background: #1b2130;
+  border-color: #41495c;
+  color: white;
+  transform: translateY(-1px);
+}
+
+/* ==========================================
+   CARD
+========================================== */
+
+.admin-card {
+  background: rgba(16, 20, 30, 0.95);
+
+  border: 1px solid #242a38;
+
+  border-radius: 18px;
+
+  padding: 30px;
+
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.admin-card-header {
+  margin-bottom: 28px;
+}
+
+.section-label {
+  display: inline-block;
+
+  color: #818cf8;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  letter-spacing: 1.5px;
+
+  margin-bottom: 8px;
+}
+
+.admin-card-header h2 {
+  margin: 0;
+
+  font-size: 23px;
+  font-weight: 700;
+
+  color: #f5f6fa;
+}
+
+.admin-card-header p {
+  margin: 7px 0 0;
+
+  color: #858da0;
+
+  font-size: 14px;
+}
+
+/* ==========================================
+   FORM
+========================================== */
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  color: #dfe2ea;
+
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+
+  box-sizing: border-box;
+
+  padding: 13px 14px;
+
+  border: 1px solid #2a3040;
+
+  border-radius: 10px;
+
+  background: #0c1018;
+
+  color: #f4f5f8;
+
+  outline: none;
+
+  font-size: 14px;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.form-group input::placeholder {
+  color: #555d6d;
+}
+
+.form-group input:hover,
+.form-group select:hover {
+  border-color: #363d4e;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  border-color: #6366f1;
+
+  background: #0e121c;
+
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.form-group input:disabled,
+.form-group select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.form-group select {
+  cursor: pointer;
+}
+
+.input-help {
+  color: #697184;
+
+  font-size: 12px;
+}
+
+/* ==========================================
+   ADD MOVIE BUTTON
+========================================== */
+
+.add-movie-button {
+  width: 100%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+
+  border: none;
+
+  border-radius: 10px;
+
+  padding: 14px 20px;
+
+  margin-top: 2px;
+
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
+
+  color: white;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  box-shadow: 0 10px 25px rgba(99, 102, 241, 0.2);
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.add-movie-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+
+  box-shadow: 0 14px 32px rgba(99, 102, 241, 0.32);
+}
+
+.add-movie-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.add-movie-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   BUTTON SPINNER
+========================================== */
+
+.button-spinner {
+  width: 15px;
+  height: 15px;
+
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+
+  border-radius: 50%;
+
+  animation: admin-spin 0.7s linear infinite;
+}
+
+@keyframes admin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================
+   PROGRESS
+========================================== */
+
+.admin-progress {
+  margin-top: 28px;
+
+  padding: 22px;
+
+  border: 1px solid #282e3d;
+
+  border-radius: 14px;
+
+  background: #0b0f17;
+}
+
+.progress-header {
+  display: flex;
+
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 20px;
+
+  margin-bottom: 15px;
+}
+
+.progress-header h3 {
+  margin: 0 0 5px;
+
+  color: #f1f3f7;
+
+  font-size: 15px;
+}
+
+.progress-header span {
+  color: #7d8698;
+
+  font-size: 12px;
+}
+
+.progress-header > strong {
+  color: #8b8ff8;
+
+  font-size: 18px;
+}
+
+/* ==========================================
+   PROGRESS BAR
+========================================== */
+
+.progress-track {
+  width: 100%;
+  height: 9px;
+
+  overflow: hidden;
+
+  background: #1a1f2b;
+
+  border-radius: 999px;
+}
+
+.progress-fill {
+  height: 100%;
+
+  border-radius: inherit;
+
+  background: linear-gradient(90deg, #6366f1, #8b5cf6, #a855f7);
+
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.45);
+
+  transition: width 0.5s ease;
+}
+
+/* ==========================================
+   PROGRESS STATS
+========================================== */
+
+.progress-stats {
+  display: grid;
+
+  grid-template-columns: repeat(3, 1fr);
+
+  gap: 12px;
+
+  margin-top: 18px;
+}
+
+.progress-stats > span {
+  padding: 11px 12px;
+
+  border-radius: 9px;
+
+  background: #111621;
+
+  border: 1px solid #202635;
+
+  color: #747d90;
+
+  font-size: 11px;
+}
+
+.progress-stats strong {
+  display: block;
+
+  margin-top: 4px;
+
+  color: #d9dce4;
+
+  font-size: 13px;
+}
+
+/* ==========================================
+   MESSAGES
+========================================== */
+
+.admin-message {
+  margin-top: 20px;
+
+  padding: 13px 15px;
+
+  border-radius: 10px;
+
+  font-size: 13px;
+
+  line-height: 1.5;
+}
+
+.admin-message.error {
+  color: #ff9b9b;
+
+  background: rgba(239, 68, 68, 0.08);
+
+  border: 1px solid rgba(239, 68, 68, 0.22);
+}
+
+.admin-message.success {
+  color: #8ee8b0;
+
+  background: rgba(34, 197, 94, 0.08);
+
+  border: 1px solid rgba(34, 197, 94, 0.22);
+}
+
+/* ==========================================
+   BACK HOME
+========================================== */
+
+.back-home-button {
+  display: block;
+
+  margin: 24px auto 0;
+
+  border: none;
+
+  background: transparent;
+
+  color: #7e8799;
+
+  font-size: 13px;
+
+  cursor: pointer;
+
+  transition:
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.back-home-button:hover {
+  color: #b9beca;
+
+  transform: translateX(-2px);
+}
+
+/* ==========================================
+   MOBILE
+========================================== */
+
+@media (max-width: 700px) {
+  .admin-page {
+    padding: 22px 14px;
+  }
+
+  .admin-header {
+    align-items: flex-start;
+
+    flex-direction: column;
+
+    gap: 20px;
+  }
+
+  .admin-account {
+    width: 100%;
+
+    justify-content: space-between;
+  }
+
+  .admin-user {
+    align-items: flex-start;
+  }
+
+  .admin-card {
+    padding: 20px;
+
+    border-radius: 15px;
+  }
+
+  .admin-brand h1 {
+    font-size: 22px;
+  }
+
+  .admin-brand p {
+    font-size: 13px;
+  }
+
+  .progress-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================
+   SMALL MOBILE
+========================================== */
+
+@media (max-width: 450px) {
+  .admin-logo {
+    width: 42px;
+    height: 42px;
+
+    border-radius: 12px;
+  }
+
+  .admin-brand h1 {
+    font-size: 20px;
+  }
+
+  .admin-card-header h2 {
+    font-size: 20px;
+  }
+
+  .admin-account {
+    align-items: center;
+  }
+
+  .logout-button {
+    padding: 9px 13px;
+  }
+
+  .admin-card {
+    padding: 17px;
+  }
+
+  .progress-header {
+    align-items: flex-start;
+  }
+
+  .progress-header > strong {
+    font-size: 16px;
+  }
+}
