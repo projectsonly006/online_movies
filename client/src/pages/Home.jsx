@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Home.css";
 import "../App.css";
+import { api } from "../api";
 
 function Home() {
   const [videos, setVideos] = useState([]);
@@ -19,7 +20,8 @@ function Home() {
       setVideosLoading(true);
       setError("");
 
-      const response = await fetch("http://localhost:5000/api/videos");
+      // const response = await fetch("http://localhost:5000/api/videos");
+      const response = await fetch(api(`/api/videos`));
 
       const data = await response.json();
 

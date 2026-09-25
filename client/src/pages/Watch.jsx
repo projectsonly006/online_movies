@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import "./Watch.css";
+import { api } from "../api";
 
 function Watch() {
   const { id } = useParams();
@@ -33,11 +34,10 @@ function Watch() {
   useEffect(() => {
     const fetchVideo = async () => {
       try {
-        const API_URL = import.meta.env.VITE_API_URL;
+        // const API_URL = import.meta.env.VITE_API_URL;
         // const response = await fetch(`http://localhost:5000/api/videos/${id}`);
 
-        const response = await fetch(`${API_URL}/api/videos/${id}`);
-
+        const response = await fetch(api(`/api/videos/${id}`));
         const data = await response.json();
 
         console.log("VIDEO DATA:", data);

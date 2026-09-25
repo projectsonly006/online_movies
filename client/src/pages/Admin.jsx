@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Admin.css";
+import { api } from "../api";
 
 function Admin() {
   const navigate = useNavigate();
@@ -75,7 +76,7 @@ function Admin() {
         }
 
         const response = await fetch(
-          `http://localhost:5000/api/videos/download-progress/${jobId}`,
+          api(`/api/videos/download-progress/${jobId}`),
           {
             headers: {
               Authorization: `Bearer ${token}`,
