@@ -58,7 +58,7 @@ router.get("/", getVideos);
 router.get("/stream/:id", streamVideo);
 
 // ==========================================
-// PUBLIC - SINGLE VIDEO
+// PUBLIC - SINGLE VIDEo
 // ==========================================
 
 router.get("/:id", getVideo);
