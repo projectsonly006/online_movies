@@ -8,7 +8,6 @@ import {
   getVideo,
   updateVideo,
   testDownloadVideo,
-  createVideoFromWeTransfer,
   createWatchableFromWeTransfer,
   getDownloadProgress,
   streamVideo,
@@ -22,18 +21,22 @@ const router = express.Router();
 // ADMIN ONLY - CREATE / MODIFY VIDEOS
 // ==========================================
 
+// Upload video file to local /videos folder
 router.post("/upload", adminAuth, uploadVideo);
 
+// Create video from an existing external URL
 router.post("/create-url", adminAuth, createVideoFromUrl);
 
+// Create video from an existing local /videos file
 router.post("/create-local", adminAuth, createLocalVideo);
 
+// Test direct download of a signed URL
 router.post("/test-download", adminAuth, testDownloadVideo);
 
-router.post("/create-wetransfer", adminAuth, createVideoFromWeTransfer);
-
+// Start background WeTransfer download
 router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
 
+// Update video
 router.put("/:id", adminAuth, updateVideo);
 
 // ==========================================
@@ -43,12 +46,20 @@ router.put("/:id", adminAuth, updateVideo);
 router.get("/download-progress/:jobId", getDownloadProgress);
 
 // ==========================================
-// PUBLIC - VIEW VIDEOS
+// PUBLIC - VIDEO LIST
 // ==========================================
 
 router.get("/", getVideos);
 
+// ==========================================
+// PUBLIC - VIDEO STREAM
+// ==========================================
+
 router.get("/stream/:id", streamVideo);
+
+// ==========================================
+// PUBLIC - SINGLE VIDEO
+// ==========================================
 
 router.get("/:id", getVideo);
 
