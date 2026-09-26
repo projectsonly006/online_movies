@@ -36,7 +36,7 @@ console.log("Video folder:", videoFolder);
 await connectDB();
 
 // ==========================================
-// RESTORE MISSING VIDEOS
+// RESTORE MISSINg VIDEOS
 // ==========================================
 
 await restoreVideos();
