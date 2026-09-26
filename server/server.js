@@ -3,11 +3,11 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 
 import connectDB from "./config/db.js";
 import videoRoutes from "./routes/videoRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
-import fs from "fs";
 import restoreVideos from "./utils/restoreVideos.js";
 
 dotenv.config();
@@ -35,8 +35,10 @@ console.log("Video folder:", videoFolder);
 
 await connectDB();
 
+console.log("MongoDB ready");
+
 // ==========================================
-// RESTORE MISSINg VIDEOS
+// RESTORE MISSING VIDEOS
 // ==========================================
 
 await restoreVideos();
@@ -64,6 +66,10 @@ app.use(express.json());
 
 app.use("/videos", express.static(videoFolder));
 
+// ==========================================
+// DEBUG VIDEOS
+// ==========================================
+
 app.get("/debug/videos", async (req, res) => {
   try {
     const files = await fs.promises.readdir(videoFolder);
@@ -81,7 +87,10 @@ app.get("/debug/videos", async (req, res) => {
   }
 });
 
-// NEW — disk space
+// ==========================================
+// DISK SPACE
+// ==========================================
+
 app.get("/debug/disk", async (req, res) => {
   try {
     const { exec } = await import("child_process");

@@ -13,21 +13,26 @@ const videoSchema = new mongoose.Schema(
       required: true,
     },
 
+    // URL served by Render
     videoUrl: {
       type: String,
       required: true,
     },
 
-    // Original source used to restore the video
+    // IMPORTANT:
+    // Original URL used to download the movie.
+    // This is what allows restoration after Render redeploys.
     sourceUrl: {
       type: String,
       default: "",
+      trim: true,
     },
 
-    // Actual filename stored in /videos
+    // Actual filename inside /server/videos
     filename: {
       type: String,
       default: "",
+      trim: true,
     },
 
     thumbnailUrl: {

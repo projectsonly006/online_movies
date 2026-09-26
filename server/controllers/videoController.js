@@ -114,21 +114,27 @@ export const createVideoFromUrl = async (req, res) => {
     }
 
     const newVideo = await Video.create({
-      title: title || "Untitled Video",
+      title: title || path.basename(safeFilename, path.extname(safeFilename)),
 
       publicId: `external-${Date.now()}`,
 
       videoUrl,
 
-      thumbnailUrl,
+      // Prefer the original WeTransfer page URL.
+      // Do NOT rely on an expiring signed URL if possible.
+      sourceUrl: sourceUrl || signedFileUrl,
 
-      duration: Number(duration) || 0,
+      filename: safeFilename,
 
-      format,
+      thumbnailUrl: "",
 
-      size: Number(size) || 0,
+      duration,
 
-      cbc,
+      format: extension,
+
+      size: downloaded.size,
+
+      cbc: cbc.trim(),
     });
 
     console.log("✅ VIDEO CREATED:", newVideo._id);
@@ -851,6 +857,12 @@ export const testDownloadVideo = async (req, res) => {
 
       videoUrl,
 
+      // IMPORTANT:
+      // Save the ORIGINAL WeTransfer page URL.
+      sourceUrl: url,
+
+      filename: safeFilename,
+
       thumbnailUrl: "",
 
       duration,
@@ -858,8 +870,6 @@ export const testDownloadVideo = async (req, res) => {
       format: extension || "mp4",
 
       size: result.size,
-
-      cbc,
     });
 
     // ==========================================
@@ -1268,6 +1278,7 @@ export const createWatchableFromWeTransfer = async (req, res) => {
   try {
     const {
       signedFileUrl,
+      sourceUrl = "",
       title = "",
       filename = "",
       cbc = "",
