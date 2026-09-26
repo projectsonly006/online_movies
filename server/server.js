@@ -52,6 +52,23 @@ app.use(express.json());
 
 app.use("/videos", express.static(videoFolder));
 
+app.get("/debug/videos", async (req, res) => {
+  try {
+    const files = await fs.promises.readdir(videoFolder);
+
+    res.json({
+      folder: videoFolder,
+      files,
+    });
+  } catch (error) {
+    console.error("DEBUG VIDEOS ERROR:", error);
+
+    res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
 // ==========================================
 // HEALTH CHECK
 // ==========================================
