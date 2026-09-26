@@ -312,7 +312,7 @@ export const getVideo = async (req, res) => {
 
       title: video.title,
 
-      // videoUrl: video.videoUrl,
+      videoUrl: video.videoUrl,
 
       thumbnailUrl: video.thumbnailUrl || "",
 
