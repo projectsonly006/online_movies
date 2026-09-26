@@ -21,6 +21,10 @@ const __dirname = path.dirname(__filename);
 
 const videoFolder = path.join(__dirname, "videos");
 
+await fs.promises.mkdir(videoFolder, {
+  recursive: true,
+});
+
 console.log("Video folder:", videoFolder);
 
 // ==========================================
