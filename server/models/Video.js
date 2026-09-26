@@ -18,6 +18,18 @@ const videoSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Original source used to restore the video
+    sourceUrl: {
+      type: String,
+      default: "",
+    },
+
+    // Actual filename stored in /videos
+    filename: {
+      type: String,
+      default: "",
+    },
+
     thumbnailUrl: {
       type: String,
       default: "",

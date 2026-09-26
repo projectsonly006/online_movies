@@ -8,6 +8,7 @@ import connectDB from "./config/db.js";
 import videoRoutes from "./routes/videoRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import fs from "fs";
+import restoreVideos from "./utils/restoreVideos.js";
 
 dotenv.config();
 
@@ -32,7 +33,13 @@ console.log("Video folder:", videoFolder);
 // DATABASE
 // ==========================================
 
-connectDB();
+await connectDB();
+
+// ==========================================
+// RESTORE MISSING VIDEOS
+// ==========================================
+
+await restoreVideos();
 
 // ==========================================
 // CORS
