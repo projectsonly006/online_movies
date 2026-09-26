@@ -74,6 +74,26 @@ app.get("/debug/videos", async (req, res) => {
   }
 });
 
+// NEW — disk space
+app.get("/debug/disk", async (req, res) => {
+  try {
+    const { exec } = await import("child_process");
+    const { promisify } = await import("util");
+
+    const execAsync = promisify(exec);
+
+    const { stdout } = await execAsync("df -h /");
+
+    res.type("text").send(stdout);
+  } catch (error) {
+    console.error("DISK CHECK ERROR:", error);
+
+    res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
 // ==========================================
 // HEALTH CHECK
 // ==========================================
