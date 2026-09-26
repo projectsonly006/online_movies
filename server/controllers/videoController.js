@@ -3,13 +3,11 @@ import path from "path";
 import mongoose from "mongoose";
 import { fileURLToPath } from "url";
 import axios from "axios";
+import { v4 as uuidv4 } from "uuid";
 
 import Video from "../models/Video.js";
-import cloudinary from "../config/cloudinary.js";
 import { getVideoDuration } from "../utils/videoMetadata.js";
-
 import { setProgress, getProgress } from "../utils/downloadProgress.js";
-import { v4 as uuidv4 } from "uuid";
 
 // ==========================================
 // PATH SETUP
@@ -20,10 +18,44 @@ const __dirname = path.dirname(__filename);
 
 const VIDEO_FOLDER = path.join(__dirname, "..", "videos");
 
+const SERVER_URL =
+  process.env.SERVER_URL || "https://online-movies-uebc.onrender.com";
+
 console.log("Video folder:", VIDEO_FOLDER);
+console.log("Server URL:", SERVER_URL);
 
 // ==========================================
-// UPLOAD VIDEO FILE TO CLOUDINARY
+// HELPERS
+// ==========================================
+
+function getSafeFilename(filename, fallback = "download.mp4") {
+  let safeFilename = path.basename(String(filename || "").trim());
+
+  if (!safeFilename || safeFilename === ".") {
+    safeFilename = fallback;
+  }
+
+  return safeFilename;
+}
+
+function getVideoUrl(filename) {
+  return `${SERVER_URL}/videos/${encodeURIComponent(filename)}`;
+}
+
+function getExtension(filename) {
+  return path.extname(filename).replace(".", "").toLowerCase() || "mp4";
+}
+
+function getTitleFromFilename(filename) {
+  return path.basename(filename, path.extname(filename));
+}
+
+function createJobId() {
+  return `job-${Date.now()}-${uuidv4().slice(0, 8)}`;
+}
+
+// ==========================================
+// UPLOAD VIDEO FILE TO LOCAL /videos FOLDER
 // ==========================================
 
 export const uploadVideo = async (req, res) => {
@@ -34,43 +66,69 @@ export const uploadVideo = async (req, res) => {
       });
     }
 
-    const video = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          resource_type: "video",
-          folder: "video-link-app",
-        },
-        (error, result) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve(result);
-          }
-        },
-      );
-
-      uploadStream.end(req.file.buffer);
+    await fs.promises.mkdir(VIDEO_FOLDER, {
+      recursive: true,
     });
+
+    const safeFilename = getSafeFilename(
+      req.file.originalname,
+      `video-${Date.now()}.mp4`,
+    );
+
+    const outputPath = path.join(VIDEO_FOLDER, safeFilename);
+
+    // Save uploaded buffer to /videos
+    await fs.promises.writeFile(outputPath, req.file.buffer);
+
+    const stats = await fs.promises.stat(outputPath);
+
+    let duration = 0;
+
+    try {
+      duration = await getVideoDuration(outputPath);
+    } catch (error) {
+      console.warn(
+        "Could not determine uploaded video duration:",
+        error.message,
+      );
+    }
+
+    const extension = getExtension(safeFilename);
+
+    const videoUrl = getVideoUrl(safeFilename);
 
     const newVideo = await Video.create({
-      title: req.body.title || "Untitled Video",
+      title:
+        req.body.title ||
+        getTitleFromFilename(safeFilename) ||
+        "Untitled Video",
 
-      publicId: video.public_id,
+      publicId: `local-upload-${Date.now()}`,
 
-      videoUrl: video.secure_url,
+      videoUrl,
 
-      thumbnailUrl: video.secure_url
-        .replace("/video/upload/", "/video/upload/so_0/")
-        .replace(".mkv", ".jpg"),
+      filename: safeFilename,
 
-      duration: video.duration || 0,
+      thumbnailUrl: "",
 
-      format: video.format || "mp4",
+      duration,
 
-      size: req.file.size,
+      format: extension,
 
-      cbc: req.body.cbc || "",
+      size: stats.size,
+
+      cbc: (req.body.cbc || "").trim(),
     });
+
+    console.log("=================================");
+    console.log("LOCAL VIDEO UPLOADED");
+    console.log("=================================");
+    console.log("Filename:", safeFilename);
+    console.log("Size:", stats.size);
+    console.log("Duration:", duration);
+    console.log("Video ID:", newVideo._id);
+    console.log("Video URL:", videoUrl);
+    console.log("=================================");
 
     return res.status(201).json({
       message: "Video uploaded successfully",
@@ -80,7 +138,7 @@ export const uploadVideo = async (req, res) => {
       watchUrl: `/watch/${newVideo._id}`,
     });
   } catch (error) {
-    console.error("UPLOAD ERROR:", error);
+    console.error("UPLOAD VIDEO ERROR:", error);
 
     return res.status(500).json({
       message: error.message || "Upload failed",
@@ -94,18 +152,21 @@ export const uploadVideo = async (req, res) => {
 
 export const createVideoFromUrl = async (req, res) => {
   try {
-    console.log("🔥 FROM-URL REQUEST");
-    console.log(req.body);
-
     const {
-      title,
+      title = "",
       videoUrl,
       thumbnailUrl = "",
       duration = 0,
       format = "mp4",
       size = 0,
       cbc = "",
+      sourceUrl = "",
+      filename = "",
     } = req.body;
+
+    console.log("=================================");
+    console.log("CREATE VIDEO FROM URL");
+    console.log("=================================");
 
     if (!videoUrl) {
       return res.status(400).json({
@@ -113,31 +174,36 @@ export const createVideoFromUrl = async (req, res) => {
       });
     }
 
+    const safeFilename = filename
+      ? getSafeFilename(filename)
+      : getSafeFilename(
+          path.basename(new URL(videoUrl).pathname),
+          `video-${Date.now()}.${format || "mp4"}`,
+        );
+
     const newVideo = await Video.create({
-      title: title || path.basename(safeFilename, path.extname(safeFilename)),
+      title: title || getTitleFromFilename(safeFilename),
 
       publicId: `external-${Date.now()}`,
 
       videoUrl,
 
-      // Prefer the original WeTransfer page URL.
-      // Do NOT rely on an expiring signed URL if possible.
-      sourceUrl: sourceUrl || signedFileUrl,
+      sourceUrl,
 
       filename: safeFilename,
 
-      thumbnailUrl: "",
+      thumbnailUrl,
 
-      duration,
+      duration: Number(duration) || 0,
 
-      format: extension,
+      format: format || getExtension(safeFilename),
 
-      size: downloaded.size,
+      size: Number(size) || 0,
 
       cbc: cbc.trim(),
     });
 
-    console.log("✅ VIDEO CREATED:", newVideo._id);
+    console.log("VIDEO CREATED:", newVideo._id);
 
     return res.status(201).json({
       message: "Video link created successfully",
@@ -161,12 +227,10 @@ export const createVideoFromUrl = async (req, res) => {
 
 export const createLocalVideo = async (req, res) => {
   try {
-    const { title, filename, cbc = "" } = req.body;
+    const { title = "", filename, cbc = "" } = req.body;
 
     console.log("=================================");
     console.log("CREATE LOCAL VIDEO");
-    console.log("Filename:", filename);
-    console.log("Video folder:", VIDEO_FOLDER);
     console.log("=================================");
 
     if (!filename) {
@@ -175,20 +239,19 @@ export const createLocalVideo = async (req, res) => {
       });
     }
 
-    const safeFilename = path.basename(filename);
+    const safeFilename = getSafeFilename(filename);
 
     const filePath = path.join(VIDEO_FOLDER, safeFilename);
 
-    console.log("Checking file:", filePath);
+    console.log("File:", filePath);
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({
         message: "Video file not found",
-        filePath,
       });
     }
 
-    const stats = fs.statSync(filePath);
+    const stats = await fs.promises.stat(filePath);
 
     if (!stats.isFile()) {
       return res.status(400).json({
@@ -196,48 +259,37 @@ export const createLocalVideo = async (req, res) => {
       });
     }
 
-    console.log("Getting video duration...");
+    let duration = 0;
 
-    const duration = await getVideoDuration(filePath);
+    try {
+      duration = await getVideoDuration(filePath);
+    } catch (error) {
+      console.warn("Could not determine video duration:", error.message);
+    }
 
-    console.log("=================================");
-    console.log("LOCAL VIDEO FOUND");
-    console.log("File:", filePath);
-    console.log("Size:", stats.size);
-    console.log("Duration:", duration);
-    console.log("=================================");
+    const extension = getExtension(safeFilename);
 
-    const extension = path.extname(safeFilename).replace(".", "").toLowerCase();
+    const videoUrl = getVideoUrl(safeFilename);
 
     const newVideo = await Video.create({
-      title: title || path.basename(safeFilename, path.extname(safeFilename)),
+      title: title || getTitleFromFilename(safeFilename),
 
       publicId: `local-${Date.now()}`,
 
-      // videoUrl:
-      //   `http://localhost:${process.env.PORT || 5000}` +
-      //   `/videos/${encodeURIComponent(safeFilename)}`,
+      videoUrl,
 
-      videoUrl: `https://online-movies-uebc.onrender.com/videos/${encodeURIComponent(safeFilename)}`,
+      filename: safeFilename,
 
       thumbnailUrl: "",
 
       duration,
 
-      format: extension || "mp4",
+      format: extension,
 
       size: stats.size,
 
-      cbc,
+      cbc: cbc.trim(),
     });
-
-    console.log("=================================");
-    console.log("✅ LOCAL VIDEO CREATED");
-    console.log("ID:", newVideo._id);
-    console.log("URL:", newVideo.videoUrl);
-    console.log("Duration:", newVideo.duration);
-    console.log("Size:", newVideo.size);
-    console.log("=================================");
 
     return res.status(201).json({
       message: "Local video added successfully",
@@ -285,12 +337,6 @@ export const getVideo = async (req, res) => {
   try {
     const { id } = req.params;
 
-    console.log("=================================");
-    console.log("GET VIDEO REQUEST");
-    console.log("ID:", id);
-    console.log("URL:", req.originalUrl);
-    console.log("=================================");
-
     if (
       !id ||
       id === "undefined" ||
@@ -310,8 +356,6 @@ export const getVideo = async (req, res) => {
         message: "Video not found",
       });
     }
-
-    console.log("VIDEO FOUND:", video._id);
 
     return res.json({
       id: video._id,
@@ -351,8 +395,6 @@ export const updateVideo = async (req, res) => {
 
     const { videoUrl, title, thumbnailUrl, cbc } = req.body;
 
-    console.log("UPDATE VIDEO ID:", id);
-
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         message: "Invalid video ID",
@@ -362,21 +404,15 @@ export const updateVideo = async (req, res) => {
     const video = await Video.findByIdAndUpdate(
       id,
       {
-        ...(videoUrl !== undefined && {
-          videoUrl,
-        }),
+        ...(videoUrl !== undefined && { videoUrl }),
 
-        ...(title !== undefined && {
-          title,
-        }),
+        ...(title !== undefined && { title }),
 
         ...(thumbnailUrl !== undefined && {
           thumbnailUrl,
         }),
 
-        ...(cbc !== undefined && {
-          cbc,
-        }),
+        ...(cbc !== undefined && { cbc }),
       },
       {
         new: true,
@@ -405,18 +441,18 @@ export const updateVideo = async (req, res) => {
 };
 
 // ==========================================
-// DOWNLOAD WETRANSFER FILE
+// DOWNLOAD FILE
 // ==========================================
 
 async function downloadWeTransferVideo(
   signedFileUrl,
   outputPath,
   expectedSize = 0,
-  filename = "download.mkv",
+  filename = "download.mp4",
   jobId = null,
 ) {
   console.log("=================================");
-  console.log("DOWNLOADING WETRANSFER FILE");
+  console.log("DOWNLOADING FILE");
   console.log("=================================");
 
   console.log("OUTPUT:", outputPath);
@@ -427,16 +463,14 @@ async function downloadWeTransferVideo(
     recursive: true,
   });
 
-  // ==========================================
-  // START DOWNLOAD
-  // ==========================================
-
   const response = await axios.get(signedFileUrl, {
     responseType: "stream",
 
     timeout: 0,
 
     maxRedirects: 10,
+
+    validateStatus: (status) => status >= 200 && status < 400,
 
     headers: {
       "User-Agent":
@@ -452,49 +486,26 @@ async function downloadWeTransferVideo(
 
   const contentLength = Number(response.headers["content-length"] || 0);
 
-  console.log("=================================");
-  console.log("WETRANSFER FILE RESPONSE");
-  console.log("=================================");
-
   console.log("STATUS:", response.status);
   console.log("CONTENT TYPE:", contentType);
   console.log("CONTENT LENGTH:", contentLength);
 
-  console.log("=================================");
-
-  // ==========================================
-  // VALIDATE RESPONSE
-  // ==========================================
-
-  if (response.status !== 200) {
+  if (
+    contentType.toLowerCase().includes("text/html") ||
+    contentType.toLowerCase().includes("application/json")
+  ) {
     response.data.destroy();
 
-    throw new Error(`Download returned HTTP ${response.status}`);
+    throw new Error(
+      "Server returned a webpage/JSON response instead of the video file.",
+    );
   }
-
-  if (contentType.toLowerCase().includes("text/html")) {
-    response.data.destroy();
-
-    throw new Error("Server returned HTML instead of video");
-  }
-
-  // ==========================================
-  // TOTAL SIZE
-  // ==========================================
 
   const totalBytes = contentLength || Number(expectedSize) || 0;
-
-  // ==========================================
-  // PROGRESS VARIABLES
-  // ==========================================
 
   let downloadedBytes = 0;
 
   const startTime = Date.now();
-
-  // ==========================================
-  // INITIAL PROGRESS
-  // ==========================================
 
   if (jobId) {
     setProgress(jobId, {
@@ -516,146 +527,120 @@ async function downloadWeTransferVideo(
     });
   }
 
-  // ==========================================
-  // CREATE FILE
-  // ==========================================
-
   const writer = fs.createWriteStream(outputPath);
 
-  // ==========================================
-  // DOWNLOAD PROGRESS
-  // ==========================================
+  const downloadPromise = new Promise((resolve, reject) => {
+    let settled = false;
 
-  response.data.on("data", (chunk) => {
-    downloadedBytes += chunk.length;
+    const fail = (error) => {
+      if (settled) return;
 
-    const elapsed = (Date.now() - startTime) / 1000;
+      settled = true;
 
-    const downloadedMB = downloadedBytes / 1024 / 1024;
+      reject(error);
+    };
 
-    const totalMB = totalBytes / 1024 / 1024;
+    const complete = () => {
+      if (settled) return;
 
-    const percentage =
-      totalBytes > 0
-        ? Number(((downloadedBytes / totalBytes) * 100).toFixed(2))
-        : 0;
+      settled = true;
 
-    const speedMBps = elapsed > 0 ? downloadedBytes / 1024 / 1024 / elapsed : 0;
+      resolve();
+    };
 
-    // ==========================================
-    // TERMINAL
-    // ==========================================
+    response.data.on("data", (chunk) => {
+      downloadedBytes += chunk.length;
 
-    process.stdout.write(
-      `\rDownloaded: ${downloadedMB.toFixed(2)} MB / ${totalMB.toFixed(
-        2,
-      )} MB (${percentage}%) | ${speedMBps.toFixed(2)} MB/s`,
-    );
+      const elapsed = (Date.now() - startTime) / 1000;
 
-    // ==========================================
-    // FRONTEND PROGRESS
-    // ==========================================
+      const downloadedMB = downloadedBytes / 1024 / 1024;
 
-    if (jobId) {
-      setProgress(jobId, {
-        status: "downloading",
+      const totalMB = totalBytes / 1024 / 1024;
 
-        percentage,
+      const percentage =
+        totalBytes > 0
+          ? Math.min(
+              100,
+              Number(((downloadedBytes / totalBytes) * 100).toFixed(2)),
+            )
+          : 0;
 
-        downloadedBytes,
+      const speedMBps =
+        elapsed > 0 ? downloadedBytes / 1024 / 1024 / elapsed : 0;
 
-        totalBytes,
+      process.stdout.write(
+        `\rDownloaded: ${downloadedMB.toFixed(2)} MB / ${totalMB.toFixed(
+          2,
+        )} MB (${percentage}%) | ${speedMBps.toFixed(2)} MB/s`,
+      );
 
-        downloadedMB: Number(downloadedMB.toFixed(2)),
+      if (jobId) {
+        setProgress(jobId, {
+          status: "downloading",
 
-        totalMB: Number(totalMB.toFixed(2)),
+          percentage,
 
-        speedMBps: Number(speedMBps.toFixed(2)),
+          downloadedBytes,
 
-        filename,
-      });
-    }
+          totalBytes,
+
+          downloadedMB: Number(downloadedMB.toFixed(2)),
+
+          totalMB: Number(totalMB.toFixed(2)),
+
+          speedMBps: Number(speedMBps.toFixed(2)),
+
+          filename,
+        });
+      }
+    });
+
+    response.data.on("error", (error) => {
+      console.error("\nDownload stream error:", error);
+
+      writer.destroy();
+
+      fail(error);
+    });
+
+    writer.on("error", (error) => {
+      console.error("\nFile write error:", error);
+
+      response.data.destroy();
+
+      fail(error);
+    });
+
+    writer.on("finish", complete);
+
+    response.data.pipe(writer);
   });
 
-  // ==========================================
-  // DOWNLOAD ERROR
-  // ==========================================
+  try {
+    await downloadPromise;
+  } catch (error) {
+    try {
+      await fs.promises.unlink(outputPath);
+    } catch {}
 
-  response.data.on("error", (error) => {
-    console.error("\nDownload stream error:", error);
-
-    if (jobId) {
-      setProgress(jobId, {
-        status: "error",
-
-        percentage: 0,
-
-        error: error.message,
-
-        filename,
-      });
-    }
-
-    writer.destroy(error);
-  });
-
-  // ==========================================
-  // FILE WRITE ERROR
-  // ==========================================
-
-  writer.on("error", (error) => {
-    console.error("\nFile write error:", error);
-
-    if (jobId) {
-      setProgress(jobId, {
-        status: "error",
-
-        percentage: 0,
-
-        error: error.message,
-
-        filename,
-      });
-    }
-
-    response.data.destroy(error);
-  });
-
-  // ==========================================
-  // PIPE
-  // ==========================================
-
-  response.data.pipe(writer);
-
-  // ==========================================
-  // WAIT FOR DOWNLOAD
-  // ==========================================
-
-  await new Promise((resolve, reject) => {
-    writer.on("finish", resolve);
-
-    writer.on("error", reject);
-
-    response.data.on("error", reject);
-  });
+    throw error;
+  }
 
   console.log("\n=================================");
-
   console.log("DOWNLOAD COMPLETE");
-
   console.log("=================================");
-
-  // ==========================================
-  // FILE STATS
-  // ==========================================
 
   const stats = await fs.promises.stat(outputPath);
 
-  console.log("SIZE:", stats.size);
+  if (stats.size === 0) {
+    throw new Error("Downloaded file is empty");
+  }
 
-  // ==========================================
-  // 100% / PROCESSING
-  // ==========================================
+  if (expectedSize > 0 && stats.size !== Number(expectedSize)) {
+    console.warn(
+      `Expected ${expectedSize} bytes but downloaded ${stats.size} bytes`,
+    );
+  }
 
   if (jobId) {
     setProgress(jobId, {
@@ -691,101 +676,6 @@ async function downloadWeTransferVideo(
 }
 
 // ==========================================
-// RESOLVE WETRANSFER URL
-// ==========================================
-
-async function resolveWeTransferUrl(wetransferUrl) {
-  console.log("=================================");
-  console.log("RESOLVING WETRANSFER URL");
-  console.log("=================================");
-
-  console.log("INPUT:", wetransferUrl);
-
-  const response = await axios.get(wetransferUrl, {
-    responseType: "text",
-
-    maxRedirects: 10,
-
-    timeout: 120000,
-
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/140 Safari/537.36",
-
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-  });
-
-  const html = response.data;
-
-  console.log("PAGE STATUS:", response.status);
-
-  console.log("HTML LENGTH:", html.length);
-
-  const nextDataMatch = html.match(
-    /<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/s,
-  );
-
-  if (!nextDataMatch) {
-    throw new Error(
-      "Could not find WeTransfer transfer data. The link may be expired or WeTransfer changed its page format.",
-    );
-  }
-
-  let nextData;
-
-  try {
-    nextData = JSON.parse(nextDataMatch[1]);
-  } catch {
-    throw new Error("Could not parse WeTransfer transfer data");
-  }
-
-  const transfer = nextData?.props?.pageProps?.initialTransfer;
-
-  if (!transfer) {
-    throw new Error("Could not find WeTransfer transfer information");
-  }
-
-  const item = transfer.items?.[0];
-
-  if (!item) {
-    throw new Error("No file found in WeTransfer transfer");
-  }
-
-  console.log("=================================");
-
-  console.log("WETRANSFER INFORMATION");
-
-  console.log("=================================");
-
-  console.log("TRANSFER ID:", transfer.id);
-
-  console.log("SECURITY HASH:", transfer.security_hash);
-
-  console.log("ITEM ID:", item.id);
-
-  console.log("FILENAME:", item.name);
-
-  console.log("SIZE:", item.size);
-
-  console.log("=================================");
-
-  return {
-    transferId: transfer.id,
-
-    securityHash: transfer.security_hash,
-
-    itemId: item.id,
-
-    filename: item.name,
-
-    size: Number(item.size || 0),
-  };
-}
-
-// ==========================================
 // TEST DOWNLOAD VIDEO
 // ==========================================
 
@@ -793,7 +683,8 @@ export const testDownloadVideo = async (req, res) => {
   try {
     const {
       signedFileUrl,
-      filename = "download.mkv",
+      sourceUrl = "",
+      filename = "download.mp4",
       expectedSize = 0,
       title = "",
       cbc = "",
@@ -812,15 +703,13 @@ export const testDownloadVideo = async (req, res) => {
       });
     }
 
-    const safeFilename = path.basename(filename);
-
-    if (!safeFilename || safeFilename === ".") {
-      return res.status(400).json({
-        message: "Valid filename is required",
-      });
-    }
+    const safeFilename = getSafeFilename(filename, `video-${Date.now()}.mp4`);
 
     const outputPath = path.join(VIDEO_FOLDER, safeFilename);
+
+    await fs.promises.mkdir(VIDEO_FOLDER, {
+      recursive: true,
+    });
 
     const result = await downloadWeTransferVideo(
       signedFileUrl,
@@ -830,36 +719,26 @@ export const testDownloadVideo = async (req, res) => {
       jobId,
     );
 
-    setProgress(jobId, {
-      status: "processing",
-      percentage: 100,
-      filename: safeFilename,
-    });
+    let duration = 0;
 
-    console.log("Getting video duration...");
+    try {
+      duration = await getVideoDuration(outputPath);
+    } catch (error) {
+      console.warn("Could not determine video duration:", error.message);
+    }
 
-    const duration = await getVideoDuration(outputPath);
+    const extension = getExtension(safeFilename);
 
-    console.log("Video duration:", duration);
-
-    const extension = path.extname(safeFilename).replace(".", "").toLowerCase();
-
-    // const videoUrl =`http://localhost:${process.env.PORT || 5000}` +`/videos/${encodeURIComponent(safeFilename)}`;
-
-    const videoUrl =
-      `https://online-movies-uebc.onrender.com` +
-      `/videos/${encodeURIComponent(safeFilename)}`;
+    const videoUrl = getVideoUrl(safeFilename);
 
     const newVideo = await Video.create({
-      title: title || path.basename(safeFilename, path.extname(safeFilename)),
+      title: title || getTitleFromFilename(safeFilename),
 
       publicId: `wetransfer-${Date.now()}`,
 
       videoUrl,
 
-      // IMPORTANT:
-      // Save the ORIGINAL WeTransfer page URL.
-      sourceUrl: url,
+      sourceUrl,
 
       filename: safeFilename,
 
@@ -867,14 +746,12 @@ export const testDownloadVideo = async (req, res) => {
 
       duration,
 
-      format: extension || "mp4",
+      format: extension,
 
       size: result.size,
-    });
 
-    // ==========================================
-    // FINISHED
-    // ==========================================
+      cbc: cbc.trim(),
+    });
 
     setProgress(jobId, {
       status: "completed",
@@ -893,7 +770,7 @@ export const testDownloadVideo = async (req, res) => {
 
       filename: safeFilename,
 
-      videoId: newVideo._id,
+      videoId: newVideo._id.toString(),
     });
 
     return res.status(201).json({
@@ -920,19 +797,21 @@ export const testDownloadVideo = async (req, res) => {
       watchUrl: `/watch/${newVideo._id}`,
     });
   } catch (error) {
-    console.error("=================================");
-    console.error("CREATE WATCHABLE VIDEO ERROR");
-    console.error("=================================");
-
-    console.error(error);
+    console.error("CREATE WATCHABLE VIDEO ERROR:", error);
 
     const jobId = req.body?.jobId;
 
     if (jobId) {
       setProgress(jobId, {
         status: "error",
+
         percentage: 0,
+
         error: error.message || "Download failed",
+
+        filename: req.body?.filename || "",
+
+        videoId: null,
       });
     }
 
@@ -943,165 +822,79 @@ export const testDownloadVideo = async (req, res) => {
 };
 
 // ==========================================
-// CREATE VIDEO FROM NORMAL WETRANSFER LINK
+// CREATE WATCHABLE FROM SIGNED URL
+// BACKGROUND DOWNLOAD
 // ==========================================
 
-export const createVideoFromWeTransfer = async (req, res) => {
+export const createWatchableFromWeTransfer = async (req, res) => {
+  const {
+    signedFileUrl,
+    sourceUrl = "",
+    title = "",
+    filename = "",
+    cbc = "",
+    jobId: clientJobId,
+  } = req.body;
+
+  if (!signedFileUrl) {
+    return res.status(400).json({
+      success: false,
+      message: "signedFileUrl is required",
+    });
+  }
+
+  const jobId = clientJobId || createJobId();
+
+  setProgress(jobId, {
+    status: "starting",
+
+    percentage: 0,
+
+    downloadedBytes: 0,
+
+    totalBytes: 0,
+
+    downloadedMB: 0,
+
+    totalMB: 0,
+
+    speedMBps: 0,
+
+    filename: filename || "",
+
+    videoId: null,
+
+    error: null,
+  });
+
+  res.status(202).json({
+    success: true,
+
+    message: "Video download started",
+
+    jobId,
+
+    videoId: null,
+  });
+
+  // ==========================================
+  // BACKGROUND WORK
+  // ==========================================
+
   try {
-    const { url, title } = req.body;
+    const parsedUrl = new URL(signedFileUrl);
 
-    console.log("=================================");
+    let safeFilename = filename;
 
-    console.log("CREATE VIDEO FROM WETRANSFER");
-
-    console.log("=================================");
-
-    console.log("URL:", url);
-
-    if (!url) {
-      return res.status(400).json({
-        message: "WeTransfer URL is required",
-      });
+    if (!safeFilename) {
+      safeFilename = path.basename(parsedUrl.pathname);
     }
 
-    // ==========================================
-    // 1. GET WETRANSFER PAGE
-    // ==========================================
+    safeFilename = getSafeFilename(safeFilename, `video-${Date.now()}.mp4`);
 
-    const pageResponse = await axios.get(url, {
-      responseType: "text",
-
-      maxRedirects: 10,
-
-      timeout: 120000,
-
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-          "AppleWebKit/537.36 (KHTML, like Gecko) " +
-          "Chrome/140 Safari/537.36",
-
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-    });
-
-    const html = pageResponse.data;
-
-    console.log("PAGE STATUS:", pageResponse.status);
-
-    console.log("HTML LENGTH:", html.length);
-
-    // ==========================================
-    // 2. NEXT DATA
-    // ==========================================
-
-    const nextDataMatch = html.match(
-      /<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/s,
-    );
-
-    if (!nextDataMatch) {
-      throw new Error(
-        "Could not find WeTransfer transfer data. The link may be invalid or WeTransfer changed its page.",
-      );
+    if (!path.extname(safeFilename)) {
+      safeFilename += ".mp4";
     }
-
-    let nextData;
-
-    try {
-      nextData = JSON.parse(nextDataMatch[1]);
-    } catch {
-      throw new Error("Failed to parse WeTransfer page data");
-    }
-
-    // ==========================================
-    // 3. TRANSFER
-    // ==========================================
-
-    const transfer = nextData?.props?.pageProps?.initialTransfer;
-
-    if (!transfer) {
-      throw new Error("Could not find transfer information in WeTransfer page");
-    }
-
-    const transferId = transfer.id;
-
-    const recipientId = transfer.security_hash;
-
-    const item = transfer.items?.[0];
-
-    if (!item) {
-      throw new Error("No file found in this WeTransfer transfer");
-    }
-
-    const itemId = item.id;
-
-    const filename = item.name;
-
-    const expectedSize = Number(item.size || 0);
-
-    console.log("=================================");
-
-    console.log("TRANSFER INFORMATION");
-
-    console.log("=================================");
-
-    console.log("TRANSFER ID:", transferId);
-
-    console.log("RECIPIENT ID:", recipientId);
-
-    console.log("ITEM ID:", itemId);
-
-    console.log("FILENAME:", filename);
-
-    console.log("SIZE:", expectedSize);
-
-    // ==========================================
-    // 4. DOWNLOAD URL
-    // ==========================================
-
-    const downloadUrl =
-      `https://wetransfer.com/downloads/${transferId}/${recipientId}` +
-      `?itemId=${encodeURIComponent(itemId)}`;
-
-    console.log("DOWNLOAD URL:");
-
-    console.log(downloadUrl);
-
-    // ==========================================
-    // 5. DOWNLOAD
-    // ==========================================
-
-    const fileResponse = await axios.get(downloadUrl, {
-      responseType: "stream",
-
-      maxRedirects: 10,
-
-      timeout: 0,
-
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-          "AppleWebKit/537.36 (KHTML, like Gecko) " +
-          "Chrome/140 Safari/537.36",
-
-        Accept: "*/*",
-      },
-    });
-
-    const contentType = fileResponse.headers["content-type"] || "";
-
-    console.log("DOWNLOAD STATUS:", fileResponse.status);
-
-    console.log("CONTENT TYPE:", contentType);
-
-    if (contentType.toLowerCase().includes("text/html")) {
-      fileResponse.data.destroy();
-
-      throw new Error("WeTransfer returned HTML instead of the video file.");
-    }
-
-    const safeFilename = path.basename(filename);
 
     const outputPath = path.join(VIDEO_FOLDER, safeFilename);
 
@@ -1109,26 +902,34 @@ export const createVideoFromWeTransfer = async (req, res) => {
       recursive: true,
     });
 
-    // ==========================================
-    // CREATE A JOB
-    // ==========================================
+    console.log("=================================");
+    console.log("BACKGROUND VIDEO DOWNLOAD");
+    console.log("=================================");
+    console.log("JOB ID:", jobId);
+    console.log("FILENAME:", safeFilename);
+    console.log("OUTPUT:", outputPath);
+    console.log("=================================");
 
-    const jobId = `job-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2, 10)}`;
+    const downloaded = await downloadWeTransferVideo(
+      signedFileUrl,
+      outputPath,
+      0,
+      safeFilename,
+      jobId,
+    );
 
     setProgress(jobId, {
-      status: "starting",
+      status: "processing",
 
-      percentage: 0,
+      percentage: 100,
 
-      downloadedBytes: 0,
+      downloadedBytes: downloaded.size,
 
-      totalBytes: expectedSize,
+      totalBytes: downloaded.size,
 
-      downloadedMB: 0,
+      downloadedMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
 
-      totalMB: Number((expectedSize / 1024 / 1024).toFixed(2)),
+      totalMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
 
       speedMBps: 0,
 
@@ -1136,77 +937,48 @@ export const createVideoFromWeTransfer = async (req, res) => {
     });
 
     // ==========================================
-    // DOWNLOAD
+    // VIDEO DURATION
     // ==========================================
 
-    const result = await downloadWeTransferVideo(
-      // IMPORTANT:
-      // We need the actual response URL.
-      // Axios follows redirects automatically.
-      fileResponse.request?.res?.responseUrl || downloadUrl,
+    let duration = 0;
 
-      outputPath,
-
-      expectedSize,
-
-      safeFilename,
-
-      jobId,
-    );
-
-    // ==========================================
-    // DURATION
-    // ==========================================
-
-    setProgress(jobId, {
-      status: "processing",
-
-      percentage: 100,
-
-      filename: safeFilename,
-    });
-
-    const duration = await getVideoDuration(outputPath);
-
-    console.log("DURATION:", duration);
-
-    // ==========================================
-    // EXTENSION
-    // ==========================================
-
-    const extension = path.extname(safeFilename).replace(".", "").toLowerCase();
-
-    // ==========================================
-    // VIDEO URL
-    // ==========================================
-
-    // const videoUrl =
-    //   `http://localhost:${process.env.PORT || 5000}` +
-    //   `/videos/${encodeURIComponent(safeFilename)}`;
-
-    const videoUrl =
-      `https://online-movies-uebc.onrender.com` +
-      `/videos/${encodeURIComponent(safeFilename)}`;
+    try {
+      duration = await getVideoDuration(outputPath);
+    } catch (error) {
+      console.warn("Could not determine duration:", error.message);
+    }
 
     // ==========================================
     // DATABASE
     // ==========================================
 
+    const extension = getExtension(safeFilename);
+
+    const videoUrl = getVideoUrl(safeFilename);
+
     const newVideo = await Video.create({
-      title: title || path.basename(safeFilename, path.extname(safeFilename)),
+      title: title || getTitleFromFilename(safeFilename),
 
       publicId: `wetransfer-${Date.now()}`,
 
       videoUrl,
 
+      sourceUrl,
+
+      filename: safeFilename,
+
       thumbnailUrl: "",
 
       duration,
 
-      format: extension || "mp4",
+      format: extension,
 
-      size: result.size,
+      size: downloaded.size,
+
+      cbc: cbc.trim(),
     });
+
+    console.log("VIDEO CREATED:", newVideo._id);
 
     // ==========================================
     // COMPLETE
@@ -1217,383 +989,60 @@ export const createVideoFromWeTransfer = async (req, res) => {
 
       percentage: 100,
 
-      downloadedBytes: result.size,
+      downloadedBytes: downloaded.size,
 
-      totalBytes: result.size,
+      totalBytes: downloaded.size,
 
-      downloadedMB: Number((result.size / 1024 / 1024).toFixed(2)),
+      downloadedMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
 
-      totalMB: Number((result.size / 1024 / 1024).toFixed(2)),
+      totalMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
 
       speedMBps: 0,
 
       filename: safeFilename,
 
-      videoId: newVideo._id,
-    });
+      videoId: newVideo._id.toString(),
 
-    console.log("=================================");
+      video: {
+        id: newVideo._id.toString(),
 
-    console.log("VIDEO CREATED");
+        title: newVideo.title,
 
-    console.log("ID:", newVideo._id);
+        videoUrl: newVideo.videoUrl,
 
-    console.log("JOB ID:", jobId);
+        thumbnailUrl: newVideo.thumbnailUrl || "",
 
-    console.log("=================================");
+        duration: newVideo.duration,
 
-    return res.status(201).json({
-      message: "Video created successfully",
+        format: newVideo.format,
 
-      jobId,
+        size: newVideo.size,
 
-      video: newVideo,
+        cbc: newVideo.cbc || "",
+      },
 
       watchUrl: `/watch/${newVideo._id}`,
     });
-  } catch (error) {
-    console.error("=================================");
-
-    console.error("CREATE WETRANSFER VIDEO ERROR");
-
-    console.error("=================================");
-
-    console.error(error);
-
-    return res.status(500).json({
-      message: error.message || "Failed to create video from WeTransfer",
-    });
-  }
-};
-
-// ==========================================
-// CREATE WATCHABLE FROM SIGNED WETRANSFER URL
-// ==========================================
-
-// ==========================================
-// CREATE WATCHABLE FROM SIGNED WETRANSFER URL
-// ==========================================
-
-export const createWatchableFromWeTransfer = async (req, res) => {
-  try {
-    const {
-      signedFileUrl,
-      sourceUrl = "",
-      title = "",
-      filename = "",
-      cbc = "",
-      jobId: clientJobId,
-    } = req.body;
-
-    // ==========================================
-    // VALIDATE URL
-    // ==========================================
-
-    if (!signedFileUrl) {
-      return res.status(400).json({
-        success: false,
-        message: "signedFileUrl is required",
-      });
-    }
-
-    // ==========================================
-    // CREATE JOB ID
-    // ==========================================
-
-    const jobId = clientJobId || uuidv4();
 
     console.log("=================================");
-    console.log("NEW DOWNLOAD JOB");
+    console.log("JOB COMPLETED");
     console.log("JOB ID:", jobId);
+    console.log("VIDEO ID:", newVideo._id.toString());
     console.log("=================================");
-
-    // ==========================================
-    // INITIAL PROGRESS
-    // ==========================================
+  } catch (error) {
+    console.error("BACKGROUND DOWNLOAD ERROR:", error);
 
     setProgress(jobId, {
-      status: "starting",
+      status: "error",
 
       percentage: 0,
 
-      downloadedBytes: 0,
-
-      totalBytes: 0,
-
-      downloadedMB: 0,
-
-      totalMB: 0,
-
-      speedMBps: 0,
+      error: error.message || "Download failed",
 
       filename: filename || "",
 
       videoId: null,
-
-      error: null,
     });
-
-    // ==========================================
-    // IMPORTANT:
-    // RETURN IMMEDIATELY
-    // ==========================================
-
-    res.status(202).json({
-      success: true,
-
-      message: "Video download started",
-
-      jobId,
-
-      videoId: null,
-    });
-
-    // ==========================================
-    // BACKGROUND DOWNLOAD
-    // ==========================================
-
-    try {
-      // ========================================
-      // VALIDATE URL
-      // ========================================
-
-      let parsedUrl;
-
-      try {
-        parsedUrl = new URL(signedFileUrl);
-      } catch {
-        throw new Error("Invalid download URL");
-      }
-
-      // ========================================
-      // DETERMINE FILENAME
-      // ========================================
-
-      const urlFilename = path.basename(parsedUrl.pathname);
-
-      let safeFilename = filename || urlFilename;
-
-      if (!safeFilename || safeFilename === ".") {
-        safeFilename = `video-${Date.now()}.mp4`;
-      }
-
-      safeFilename = path.basename(safeFilename);
-
-      // ========================================
-      // ADD EXTENSION IF MISSING
-      // ========================================
-
-      if (!path.extname(safeFilename)) {
-        safeFilename += ".mp4";
-      }
-
-      // ========================================
-      // OUTPUT PATH
-      // ========================================
-
-      const outputPath = path.join(VIDEO_FOLDER, safeFilename);
-
-      await fs.promises.mkdir(VIDEO_FOLDER, {
-        recursive: true,
-      });
-
-      console.log("=================================");
-      console.log("DOWNLOAD INFORMATION");
-      console.log("=================================");
-
-      console.log("JOB ID:", jobId);
-      console.log("SIGNED URL:", signedFileUrl);
-      console.log("FILENAME:", safeFilename);
-      console.log("OUTPUT:", outputPath);
-
-      console.log("=================================");
-
-      // ========================================
-      // DOWNLOAD
-      // ========================================
-
-      const downloaded = await downloadWeTransferVideo(
-        signedFileUrl,
-        outputPath,
-        0,
-        safeFilename,
-        jobId,
-      );
-
-      console.log("=================================");
-      console.log("DOWNLOAD FINISHED");
-      console.log("JOB ID:", jobId);
-      console.log("SIZE:", downloaded.size);
-      console.log("=================================");
-
-      // ========================================
-      // PROCESSING
-      // ========================================
-
-      setProgress(jobId, {
-        status: "processing",
-
-        percentage: 100,
-
-        downloadedBytes: downloaded.size,
-
-        totalBytes: downloaded.size,
-
-        downloadedMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
-
-        totalMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
-
-        speedMBps: 0,
-
-        filename: safeFilename,
-      });
-
-      // ========================================
-      // GET VIDEO DURATION
-      // ========================================
-
-      console.log("Getting video duration...");
-
-      let duration = 0;
-
-      try {
-        duration = await getVideoDuration(outputPath);
-
-        console.log("VIDEO DURATION:", duration);
-      } catch (error) {
-        console.warn("Could not determine video duration:", error.message);
-      }
-
-      // ========================================
-      // EXTENSION
-      // ========================================
-
-      const extension =
-        path.extname(safeFilename).replace(".", "").toLowerCase() || "mp4";
-
-      // ========================================
-      // VIDEO URL
-      // ========================================
-
-      // const serverUrl =
-      //   process.env.SERVER_URL ||
-      //   `http://localhost:${process.env.PORT || 5000}`;
-
-      const serverUrl =
-        process.env.SERVER_URL || "https://online-movies-uebc.onrender.com";
-
-      const videoUrl = `${serverUrl}/videos/${encodeURIComponent(safeFilename)}`;
-
-      // ========================================
-      // CREATE MONGODB RECORD
-      // ========================================
-
-      console.log("Creating MongoDB video...");
-
-      const newVideo = await Video.create({
-        title: title || path.basename(safeFilename, path.extname(safeFilename)),
-
-        publicId: `external-${Date.now()}`,
-
-        videoUrl,
-
-        thumbnailUrl: "",
-
-        duration,
-
-        format: extension,
-
-        size: downloaded.size,
-
-        cbc: cbc.trim(),
-      });
-
-      console.log("=================================");
-      console.log("VIDEO CREATED");
-      console.log("VIDEO ID:", newVideo._id.toString());
-      console.log("JOB ID:", jobId);
-      console.log("CBC RECEIVED:", cbc);
-
-      console.log("=================================");
-
-      // ========================================
-      // COMPLETED
-      // ========================================
-
-      setProgress(jobId, {
-        status: "completed",
-
-        percentage: 100,
-
-        downloadedBytes: downloaded.size,
-
-        totalBytes: downloaded.size,
-
-        downloadedMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
-
-        totalMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
-
-        speedMBps: 0,
-
-        filename: safeFilename,
-
-        videoId: newVideo._id.toString(),
-
-        video: {
-          id: newVideo._id.toString(),
-
-          title: newVideo.title,
-
-          // videoUrl: newVideo.videoUrl,
-
-          thumbnailUrl: newVideo.thumbnailUrl || "",
-
-          duration: newVideo.duration,
-
-          format: newVideo.format,
-
-          size: newVideo.size,
-
-          cbc: newVideo.cbc || "",
-        },
-
-        watchUrl: `/watch/${newVideo._id.toString()}`,
-      });
-
-      console.log("=================================");
-      console.log("JOB COMPLETED");
-      console.log("JOB ID:", jobId);
-      console.log("VIDEO ID:", newVideo._id.toString());
-      console.log("=================================");
-    } catch (error) {
-      console.error("=================================");
-      console.error("BACKGROUND DOWNLOAD ERROR");
-      console.error("=================================");
-
-      console.error(error);
-
-      setProgress(jobId, {
-        status: "error",
-
-        percentage: 0,
-
-        error: error.message || "Download failed",
-
-        filename: filename || "",
-
-        videoId: null,
-      });
-    }
-  } catch (error) {
-    console.error("CREATE WATCHABLE ERROR:", error);
-
-    if (!res.headersSent) {
-      return res.status(500).json({
-        success: false,
-
-        message: error.message || "Failed to start video download",
-      });
-    }
   }
 };
 
@@ -1604,6 +1053,12 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 export const getDownloadProgress = async (req, res) => {
   try {
     const { jobId } = req.params;
+
+    if (!jobId) {
+      return res.status(400).json({
+        message: "jobId is required",
+      });
+    }
 
     const progress = getProgress(jobId);
 
@@ -1623,11 +1078,15 @@ export const getDownloadProgress = async (req, res) => {
   }
 };
 
+// ==========================================
+// STREAM VIDEO
+// ==========================================
+
 export const streamVideo = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         message: "Invalid video ID",
       });
@@ -1641,9 +1100,28 @@ export const streamVideo = async (req, res) => {
       });
     }
 
-    // Extract filename from stored URL
-    const url = new URL(video.videoUrl);
-    const filename = decodeURIComponent(path.basename(url.pathname));
+    let filename = video.filename;
+
+    // Fallback for older database records
+    if (!filename && video.videoUrl) {
+      try {
+        const url = new URL(video.videoUrl);
+
+        filename = decodeURIComponent(path.basename(url.pathname));
+      } catch {
+        return res.status(400).json({
+          message: "Invalid stored video URL",
+        });
+      }
+    }
+
+    if (!filename) {
+      return res.status(404).json({
+        message: "Video filename not found",
+      });
+    }
+
+    filename = path.basename(filename);
 
     const filePath = path.join(VIDEO_FOLDER, filename);
 
@@ -1653,19 +1131,41 @@ export const streamVideo = async (req, res) => {
       });
     }
 
-    const stat = fs.statSync(filePath);
+    const stat = await fs.promises.stat(filePath);
+
+    if (!stat.isFile()) {
+      return res.status(400).json({
+        message: "Video path is not a file",
+      });
+    }
+
     const fileSize = stat.size;
+
+    const extension = path.extname(filename).replace(".", "").toLowerCase();
+
+    const mimeTypes = {
+      mp4: "video/mp4",
+      webm: "video/webm",
+      mov: "video/quicktime",
+      mkv: "video/x-matroska",
+      avi: "video/x-msvideo",
+      m4v: "video/x-m4v",
+    };
+
+    const contentType = mimeTypes[extension] || "video/mp4";
 
     const range = req.headers.range;
 
     // ==========================================
-    // NO RANGE REQUEST
+    // NO RANGE
     // ==========================================
 
     if (!range) {
       res.writeHead(200, {
         "Content-Length": fileSize,
-        "Content-Type": "video/mp4",
+
+        "Content-Type": contentType,
+
         "Accept-Ranges": "bytes",
       });
 
@@ -1675,41 +1175,81 @@ export const streamVideo = async (req, res) => {
     }
 
     // ==========================================
-    // RANGE REQUEST
+    // RANGE
     // ==========================================
 
-    const parts = range.replace(/bytes=/, "").split("-");
+    const rangeMatch = range.match(/bytes=(\d*)-(\d*)/);
 
-    const start = parseInt(parts[0], 10);
-
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-    if (start >= fileSize || end >= fileSize) {
+    if (!rangeMatch) {
       return res.status(416).json({
+        message: "Invalid range request",
+      });
+    }
+
+    let start = rangeMatch[1] !== "" ? parseInt(rangeMatch[1], 10) : 0;
+
+    let end = rangeMatch[2] !== "" ? parseInt(rangeMatch[2], 10) : fileSize - 1;
+
+    // Handle suffix range: bytes=-500
+    if (rangeMatch[1] === "" && rangeMatch[2] !== "") {
+      const suffixLength = parseInt(rangeMatch[2], 10);
+
+      start = Math.max(0, fileSize - suffixLength);
+
+      end = fileSize - 1;
+    }
+
+    if (
+      Number.isNaN(start) ||
+      Number.isNaN(end) ||
+      start < 0 ||
+      start >= fileSize ||
+      end < start
+    ) {
+      return res.status(416).set("Content-Range", `bytes */${fileSize}`).json({
         message: "Requested range not satisfiable",
       });
     }
 
+    end = Math.min(end, fileSize - 1);
+
     const chunkSize = end - start + 1;
+
+    res.writeHead(206, {
+      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+
+      "Accept-Ranges": "bytes",
+
+      "Content-Length": chunkSize,
+
+      "Content-Type": contentType,
+    });
 
     const stream = fs.createReadStream(filePath, {
       start,
       end,
     });
 
-    res.writeHead(206, {
-      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-      "Accept-Ranges": "bytes",
-      "Content-Length": chunkSize,
-      "Content-Type": "video/mp4",
+    stream.on("error", (error) => {
+      console.error("VIDEO STREAM ERROR:", error);
+
+      if (!res.headersSent) {
+        res.status(500).end();
+      } else {
+        res.destroy(error);
+      }
     });
 
     stream.pipe(res);
   } catch (error) {
     console.error("STREAM VIDEO ERROR:", error);
 
-    return res.status(500).json({
-      message: "Failed to stream video",
-    });
+    if (!res.headersSent) {
+      return res.status(500).json({
+        message: "Failed to stream video",
+      });
+    }
+
+    res.end();
   }
 };
