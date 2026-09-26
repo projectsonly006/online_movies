@@ -3,7 +3,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import fs from "fs";
 
 import connectDB from "./config/db.js";
 import videoRoutes from "./routes/videoRoutes.js";
