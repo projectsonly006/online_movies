@@ -1,76 +1,23 @@
-import fs from "fs";
-import path from "path";
-import mongoose from "mongoose";
 import axios from "axios";
+import mongoose from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 
 import Video from "../models/Video.js";
-import { getVideoDuration } from "../utils/videoMetadata.js";
-import { setProgress, getProgress } from "../utils/downloadProgress.js";
 
 // ==========================================
-// PATH / SERVER SETUP
+// SERVER URL
 // ==========================================
-
-const VIDEO_FOLDER = process.env.VIDEO_FOLDER || "/var/data/videos";
 
 const SERVER_URL =
   process.env.SERVER_URL || "https://online-movies-uebc.onrender.com";
-
-console.log("Video folder:", VIDEO_FOLDER);
-console.log("Server URL:", SERVER_URL);
 
 // ==========================================
 // HELPERS
 // ==========================================
 
-function getSafeFilename(filename, fallback = "download.mp4") {
-  let safeFilename = path.basename(String(filename || "").trim());
-
-  if (!safeFilename || safeFilename === ".") {
-    safeFilename = fallback;
-  }
-
-  return safeFilename;
-}
-
-function createVideoFilename(originalFilename) {
-  const extension = path.extname(originalFilename || ".mp4") || ".mp4";
-
-  const baseName = path.basename(originalFilename || "video", extension);
-
-  const safeBaseName = baseName
-    .replace(/[^a-zA-Z0-9-_]/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 80);
-
-  return `${safeBaseName}-${Date.now()}-${uuidv4().slice(0, 8)}${extension}`;
-}
-
 function getVideoUrl(videoId) {
   return `${SERVER_URL}/api/videos/stream/${videoId}`;
 }
-
-function getExtension(filename) {
-  return (
-    path
-      .extname(filename || "")
-      .replace(".", "")
-      .toLowerCase() || "mp4"
-  );
-}
-
-function getTitleFromFilename(filename) {
-  return path.basename(filename, path.extname(filename));
-}
-
-function createJobId() {
-  return `job-${Date.now()}-${uuidv4().slice(0, 8)}`;
-}
-
-// ==========================================
-// EXPIRY HELPER
-// ==========================================
 
 function getExpiryDate(expiresAt) {
   if (!expiresAt) {
@@ -86,279 +33,200 @@ function getExpiryDate(expiresAt) {
   return date;
 }
 
-// ==========================================
-// UPLOAD VIDEO FILE
-// ==========================================
-
-export const uploadVideo = async (req, res) => {
+function getExtensionFromUrl(url) {
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        message: "No video uploaded",
-      });
+    const pathname = new URL(url).pathname;
+
+    const match = pathname.match(/\.([a-zA-Z0-9]+)$/);
+
+    if (match) {
+      return match[1].toLowerCase();
     }
+  } catch {}
 
-    await fs.promises.mkdir(VIDEO_FOLDER, {
-      recursive: true,
-    });
+  return "mp4";
+}
 
-    const { title = "", cbc = "", expiresAt, sourceUrl = "" } = req.body;
+function getMimeType(extension) {
+  const mimeTypes = {
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mov: "video/quicktime",
+    m4v: "video/x-m4v",
+    ogv: "video/ogg",
+    avi: "video/x-msvideo",
+    mkv: "video/x-matroska",
+  };
 
-    const expiryDate = getExpiryDate(expiresAt);
-
-    const safeFilename = createVideoFilename(req.file.originalname);
-
-    const outputPath = path.join(VIDEO_FOLDER, safeFilename);
-
-    await fs.promises.writeFile(outputPath, req.file.buffer);
-
-    const stats = await fs.promises.stat(outputPath);
-
-    let duration = 0;
-
-    try {
-      duration = await getVideoDuration(outputPath);
-    } catch (error) {
-      console.warn(
-        "Could not determine uploaded video duration:",
-        error.message,
-      );
-    }
-
-    const extension = getExtension(safeFilename);
-
-    const newVideo = new Video({
-      title: title.trim() || getTitleFromFilename(safeFilename),
-
-      publicId: `upload-${Date.now()}-${uuidv4().slice(0, 8)}`,
-
-      sourceUrl,
-
-      filename: safeFilename,
-
-      thumbnailUrl: "",
-
-      duration,
-
-      format: extension,
-
-      size: stats.size,
-
-      cbc: String(cbc || "").trim(),
-
-      expiresAt: expiryDate,
-    });
-
-    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
-
-    await newVideo.save();
-
-    console.log("=================================");
-    console.log("LOCAL VIDEO UPLOADED");
-    console.log("=================================");
-    console.log("Filename:", safeFilename);
-    console.log("Size:", stats.size);
-    console.log("Duration:", duration);
-    console.log("Video ID:", newVideo._id);
-    console.log("Expires:", newVideo.expiresAt);
-    console.log("Video URL:", newVideo.videoUrl);
-    console.log("=================================");
-
-    return res.status(201).json({
-      message: "Video uploaded successfully",
-
-      video: newVideo,
-
-      watchUrl: `/watch/${newVideo._id}`,
-    });
-  } catch (error) {
-    console.error("UPLOAD VIDEO ERROR:", error);
-
-    return res.status(500).json({
-      message: error.message || "Upload failed",
-    });
-  }
-};
+  return mimeTypes[extension] || "video/mp4";
+}
 
 // ==========================================
-// CREATE VIDEO FROM EXISTING URL
+// CREATE WATCHABLE VIDEO
+// ==========================================
+//
+// IMPORTANT:
+// This DOES NOT download the video.
+//
+// It only stores the source URL + metadata.
+//
 // ==========================================
 
-export const createVideoFromUrl = async (req, res) => {
+export const createWatchableFromWeTransfer = async (req, res) => {
   try {
     const {
+      signedFileUrl,
       title = "",
-      videoUrl,
+      cbc = "",
       thumbnailUrl = "",
       duration = 0,
-      format = "mp4",
+      format = "",
       size = 0,
-      cbc = "",
-      sourceUrl = "",
-      filename = "",
       expiresAt,
     } = req.body;
 
-    if (!videoUrl) {
+    // ==========================================
+    // VALIDATE URL
+    // ==========================================
+
+    if (!signedFileUrl || typeof signedFileUrl !== "string") {
       return res.status(400).json({
-        message: "videoUrl is required",
+        success: false,
+        message: "Video URL is required",
       });
     }
 
-    const expiryDate = getExpiryDate(expiresAt);
-
-    let safeFilename;
+    let parsedUrl;
 
     try {
-      safeFilename = filename
-        ? getSafeFilename(filename)
-        : getSafeFilename(
-            path.basename(new URL(videoUrl).pathname),
-            `video-${Date.now()}.${format || "mp4"}`,
-          );
+      parsedUrl = new URL(signedFileUrl);
     } catch {
-      safeFilename = getSafeFilename(
-        filename,
-        `video-${Date.now()}.${format || "mp4"}`,
-      );
+      return res.status(400).json({
+        success: false,
+        message: "Invalid video URL",
+      });
     }
 
-    const extension = getExtension(safeFilename || `video.${format}`);
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return res.status(400).json({
+        success: false,
+        message: "Only HTTP and HTTPS URLs are supported",
+      });
+    }
+
+    // ==========================================
+    // TITLE
+    // ==========================================
+
+    const cleanTitle = String(title || "").trim();
+
+    if (!cleanTitle) {
+      return res.status(400).json({
+        success: false,
+        message: "Movie title is required",
+      });
+    }
+
+    // ==========================================
+    // CBC
+    // ==========================================
+
+    const cleanCbc = String(cbc || "").trim();
+
+    if (!cleanCbc) {
+      return res.status(400).json({
+        success: false,
+        message: "CBC rating is required",
+      });
+    }
+
+    // ==========================================
+    // EXPIRY
+    // ==========================================
+
+    const expiryDate = getExpiryDate(expiresAt);
+
+    if (expiresAt && !expiryDate) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid expiry date",
+      });
+    }
+
+    // ==========================================
+    // FORMAT
+    // ==========================================
+
+    const detectedFormat =
+      String(format || "")
+        .trim()
+        .toLowerCase() || getExtensionFromUrl(signedFileUrl);
+
+    // ==========================================
+    // CREATE DATABASE RECORD
+    // ==========================================
 
     const newVideo = new Video({
-      title: title.trim() || getTitleFromFilename(safeFilename),
+      title: cleanTitle,
 
-      publicId: `url-${Date.now()}-${uuidv4().slice(0, 8)}`,
+      sourceUrl: signedFileUrl,
 
-      sourceUrl,
-
-      filename: safeFilename,
-
-      thumbnailUrl,
+      thumbnailUrl: String(thumbnailUrl || "").trim(),
 
       duration: Number(duration) || 0,
 
-      format: extension,
+      format: detectedFormat,
 
       size: Number(size) || 0,
 
-      cbc: String(cbc || "").trim(),
+      cbc: cleanCbc,
 
       expiresAt: expiryDate,
+
+      publicId: `video-${Date.now()}-${uuidv4().slice(0, 8)}`,
     });
 
-    /*
-     * IMPORTANT:
-     * This URL points to our server's stream endpoint.
-     */
-    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
+    newVideo.save();
 
-    await newVideo.save();
+    // ==========================================
+    // WATCH URL
+    // ==========================================
+
+    const watchableUrl = getVideoUrl(newVideo._id.toString());
 
     return res.status(201).json({
-      message: "Video link created successfully",
+      success: true,
 
-      video: newVideo,
+      message: "Movie added successfully",
+
+      video: {
+        id: newVideo._id,
+
+        title: newVideo.title,
+
+        videoUrl: watchableUrl,
+
+        thumbnailUrl: newVideo.thumbnailUrl,
+
+        duration: newVideo.duration,
+
+        format: newVideo.format,
+
+        size: newVideo.size,
+
+        cbc: newVideo.cbc,
+
+        expiresAt: newVideo.expiresAt,
+      },
 
       watchUrl: `/watch/${newVideo._id}`,
     });
   } catch (error) {
-    console.error("CREATE FROM URL ERROR:", error);
+    console.error("CREATE WATCHABLE ERROR:", error);
 
     return res.status(500).json({
-      message: error.message || "Failed to create video link",
-    });
-  }
-};
-
-// ==========================================
-// CREATE VIDEO FROM LOCAL FILE
-// ==========================================
-
-export const createLocalVideo = async (req, res) => {
-  try {
-    const {
-      title = "",
-      filename,
-      cbc = "",
-      expiresAt,
-      sourceUrl = "",
-    } = req.body;
-
-    if (!filename) {
-      return res.status(400).json({
-        message: "filename is required",
-      });
-    }
-
-    const safeFilename = getSafeFilename(filename);
-
-    const filePath = path.join(VIDEO_FOLDER, safeFilename);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({
-        message: "Video file not found",
-      });
-    }
-
-    const stats = await fs.promises.stat(filePath);
-
-    if (!stats.isFile()) {
-      return res.status(400).json({
-        message: "The specified path is not a file",
-      });
-    }
-
-    const expiryDate = getExpiryDate(expiresAt);
-
-    let duration = 0;
-
-    try {
-      duration = await getVideoDuration(filePath);
-    } catch (error) {
-      console.warn("Could not determine video duration:", error.message);
-    }
-
-    const extension = getExtension(safeFilename);
-
-    const newVideo = new Video({
-      title: title.trim() || getTitleFromFilename(safeFilename),
-
-      publicId: `local-${Date.now()}-${uuidv4().slice(0, 8)}`,
-
-      sourceUrl,
-
-      filename: safeFilename,
-
-      thumbnailUrl: "",
-
-      duration,
-
-      format: extension,
-
-      size: stats.size,
-
-      cbc: String(cbc || "").trim(),
-
-      expiresAt: expiryDate,
-    });
-
-    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
-
-    await newVideo.save();
-
-    return res.status(201).json({
-      message: "Local video added successfully",
-
-      video: newVideo,
-
-      watchUrl: `/watch/${newVideo._id}`,
-    });
-  } catch (error) {
-    console.error("CREATE LOCAL VIDEO ERROR:", error);
-
-    return res.status(500).json({
-      message: error.message || "Failed to add local video",
+      success: false,
+      message: error.message || "Failed to create movie",
     });
   }
 };
@@ -369,7 +237,18 @@ export const createLocalVideo = async (req, res) => {
 
 export const getVideos = async (req, res) => {
   try {
-    const videos = await Video.find()
+    const videos = await Video.find({
+      $or: [
+        {
+          expiresAt: null,
+        },
+        {
+          expiresAt: {
+            $gt: new Date(),
+          },
+        },
+      ],
+    })
       .select(
         "_id title thumbnailUrl duration format size cbc createdAt expiresAt",
       )
@@ -395,15 +274,9 @@ export const getVideo = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (
-      !id ||
-      id === "undefined" ||
-      id === "null" ||
-      !mongoose.Types.ObjectId.isValid(id)
-    ) {
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         message: "Invalid video ID",
-        receivedId: id,
       });
     }
 
@@ -415,12 +288,22 @@ export const getVideo = async (req, res) => {
       });
     }
 
+    // ==========================================
+    // EXPIRY
+    // ==========================================
+
+    if (video.expiresAt && new Date() >= new Date(video.expiresAt)) {
+      return res.status(410).json({
+        message: "This video has expired",
+      });
+    }
+
     return res.json({
       id: video._id,
 
       title: video.title,
 
-      videoUrl: video.videoUrl,
+      videoUrl: getVideoUrl(video._id.toString()),
 
       thumbnailUrl: video.thumbnailUrl || "",
 
@@ -453,45 +336,74 @@ export const updateVideo = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { videoUrl, title, thumbnailUrl, cbc, expiresAt } = req.body;
-
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         message: "Invalid video ID",
       });
     }
 
-    let expiryDate;
+    const {
+      title,
+      videoUrl,
+      thumbnailUrl,
+      cbc,
+      duration,
+      format,
+      size,
+      expiresAt,
+    } = req.body;
+
+    const updateData = {};
+
+    if (title !== undefined) {
+      updateData.title = String(title).trim();
+    }
+
+    if (videoUrl !== undefined) {
+      try {
+        const parsedUrl = new URL(videoUrl);
+
+        if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+          throw new Error();
+        }
+
+        updateData.sourceUrl = videoUrl;
+      } catch {
+        return res.status(400).json({
+          message: "Invalid video URL",
+        });
+      }
+    }
+
+    if (thumbnailUrl !== undefined) {
+      updateData.thumbnailUrl = String(thumbnailUrl).trim();
+    }
+
+    if (cbc !== undefined) {
+      updateData.cbc = String(cbc).trim();
+    }
+
+    if (duration !== undefined) {
+      updateData.duration = Number(duration) || 0;
+    }
+
+    if (format !== undefined) {
+      updateData.format = String(format).trim();
+    }
+
+    if (size !== undefined) {
+      updateData.size = Number(size) || 0;
+    }
 
     if (expiresAt !== undefined) {
-      expiryDate = getExpiryDate(expiresAt);
+      const expiryDate = getExpiryDate(expiresAt);
 
       if (expiresAt && !expiryDate) {
         return res.status(400).json({
           message: "Invalid expiresAt date",
         });
       }
-    }
 
-    const updateData = {};
-
-    if (videoUrl !== undefined) {
-      updateData.videoUrl = videoUrl;
-    }
-
-    if (title !== undefined) {
-      updateData.title = title;
-    }
-
-    if (thumbnailUrl !== undefined) {
-      updateData.thumbnailUrl = thumbnailUrl;
-    }
-
-    if (cbc !== undefined) {
-      updateData.cbc = cbc;
-    }
-
-    if (expiresAt !== undefined) {
       updateData.expiresAt = expiryDate;
     }
 
@@ -507,6 +419,8 @@ export const updateVideo = async (req, res) => {
     }
 
     return res.json({
+      success: true,
+
       message: "Video updated successfully",
 
       video,
@@ -521,629 +435,52 @@ export const updateVideo = async (req, res) => {
 };
 
 // ==========================================
-// DOWNLOAD WETRANSFER FILE
+// DELETE VIDEO
 // ==========================================
 
-async function downloadWeTransferVideo(
-  signedFileUrl,
-  outputPath,
-  expectedSize = 0,
-  filename = "download.mp4",
-  jobId = null,
-) {
-  await fs.promises.mkdir(path.dirname(outputPath), {
-    recursive: true,
-  });
-
-  const response = await axios.get(signedFileUrl, {
-    responseType: "stream",
-
-    timeout: 0,
-
-    maxRedirects: 10,
-
-    validateStatus: (status) => status >= 200 && status < 400,
-
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/140 Safari/537.36",
-
-      Accept: "*/*",
-    },
-  });
-
-  const contentType = response.headers["content-type"] || "";
-
-  const contentLength = Number(response.headers["content-length"] || 0);
-
-  if (
-    contentType.toLowerCase().includes("text/html") ||
-    contentType.toLowerCase().includes("application/json")
-  ) {
-    response.data.destroy();
-
-    throw new Error(
-      "Server returned a webpage/JSON response instead of the video file.",
-    );
-  }
-
-  const totalBytes = contentLength || Number(expectedSize) || 0;
-
-  let downloadedBytes = 0;
-
-  const startTime = Date.now();
-
-  if (jobId) {
-    setProgress(jobId, {
-      status: "downloading",
-
-      percentage: 0,
-
-      downloadedBytes: 0,
-
-      totalBytes,
-
-      downloadedMB: 0,
-
-      totalMB: Number((totalBytes / 1024 / 1024).toFixed(2)),
-
-      speedMBps: 0,
-
-      filename,
-    });
-  }
-
-  const writer = fs.createWriteStream(outputPath);
-
-  const downloadPromise = new Promise((resolve, reject) => {
-    let settled = false;
-
-    const fail = (error) => {
-      if (settled) return;
-
-      settled = true;
-
-      reject(error);
-    };
-
-    const complete = () => {
-      if (settled) return;
-
-      settled = true;
-
-      resolve();
-    };
-
-    response.data.on("data", (chunk) => {
-      downloadedBytes += chunk.length;
-
-      const elapsed = (Date.now() - startTime) / 1000;
-
-      const downloadedMB = downloadedBytes / 1024 / 1024;
-
-      const totalMB = totalBytes / 1024 / 1024;
-
-      const percentage =
-        totalBytes > 0
-          ? Math.min(
-              100,
-              Number(((downloadedBytes / totalBytes) * 100).toFixed(2)),
-            )
-          : 0;
-
-      const speedMBps =
-        elapsed > 0 ? downloadedBytes / 1024 / 1024 / elapsed : 0;
-
-      process.stdout.write(
-        `\rDownloaded: ${downloadedMB.toFixed(2)} MB / ${totalMB.toFixed(
-          2,
-        )} MB (${percentage}%) | ${speedMBps.toFixed(2)} MB/s`,
-      );
-
-      if (jobId) {
-        setProgress(jobId, {
-          status: "downloading",
-
-          percentage,
-
-          downloadedBytes,
-
-          totalBytes,
-
-          downloadedMB: Number(downloadedMB.toFixed(2)),
-
-          totalMB: Number(totalMB.toFixed(2)),
-
-          speedMBps: Number(speedMBps.toFixed(2)),
-
-          filename,
-        });
-      }
-    });
-
-    response.data.on("error", (error) => {
-      console.error("\nDownload stream error:", error);
-
-      writer.destroy();
-
-      fail(error);
-    });
-
-    writer.on("error", (error) => {
-      console.error("\nFile write error:", error);
-
-      response.data.destroy();
-
-      fail(error);
-    });
-
-    writer.on("finish", complete);
-
-    response.data.pipe(writer);
-  });
-
+export const deleteVideo = async (req, res) => {
   try {
-    await downloadPromise;
-  } catch (error) {
-    try {
-      await fs.promises.unlink(outputPath);
-    } catch {}
+    const { id } = req.params;
 
-    throw error;
-  }
-
-  const stats = await fs.promises.stat(outputPath);
-
-  if (stats.size === 0) {
-    throw new Error("Downloaded file is empty");
-  }
-
-  if (jobId) {
-    setProgress(jobId, {
-      status: "processing",
-
-      percentage: 100,
-
-      downloadedBytes: stats.size,
-
-      totalBytes: totalBytes || stats.size,
-
-      downloadedMB: Number((stats.size / 1024 / 1024).toFixed(2)),
-
-      totalMB: Number(((totalBytes || stats.size) / 1024 / 1024).toFixed(2)),
-
-      speedMBps: 0,
-
-      filename,
-    });
-  }
-
-  return {
-    path: outputPath,
-
-    filename,
-
-    size: stats.size,
-
-    expectedSize: Number(expectedSize) || contentLength,
-
-    contentType,
-  };
-}
-
-// ==========================================
-// TEST DOWNLOAD VIDEO
-// ==========================================
-
-export const testDownloadVideo = async (req, res) => {
-  try {
-    const {
-      signedFileUrl,
-      sourceUrl = "",
-      filename = "download.mp4",
-      expectedSize = 0,
-      title = "",
-      cbc = "",
-      jobId,
-      expiresAt,
-    } = req.body;
-
-    if (!signedFileUrl) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
-        message: "signedFileUrl is required",
+        message: "Invalid video ID",
       });
     }
 
-    if (!jobId) {
-      return res.status(400).json({
-        message: "jobId is required",
-      });
-    }
+    const video = await Video.findByIdAndDelete(id);
 
-    const expiryDate = getExpiryDate(expiresAt);
-
-    const safeFilename = getSafeFilename(filename, `video-${Date.now()}.mp4`);
-
-    const outputPath = path.join(VIDEO_FOLDER, safeFilename);
-
-    const result = await downloadWeTransferVideo(
-      signedFileUrl,
-      outputPath,
-      Number(expectedSize) || 0,
-      safeFilename,
-      jobId,
-    );
-
-    let duration = 0;
-
-    try {
-      duration = await getVideoDuration(outputPath);
-    } catch (error) {
-      console.warn("Could not determine video duration:", error.message);
-    }
-
-    const extension = getExtension(safeFilename);
-
-    const newVideo = new Video({
-      title: title || getTitleFromFilename(safeFilename),
-
-      publicId: `wetransfer-${Date.now()}-${uuidv4().slice(0, 8)}`,
-
-      sourceUrl,
-
-      filename: safeFilename,
-
-      thumbnailUrl: "",
-
-      duration,
-
-      format: extension,
-
-      size: result.size,
-
-      cbc: String(cbc || "").trim(),
-
-      expiresAt: expiryDate,
-    });
-
-    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
-
-    await newVideo.save();
-
-    setProgress(jobId, {
-      status: "completed",
-
-      percentage: 100,
-
-      downloadedBytes: result.size,
-
-      totalBytes: result.size,
-
-      downloadedMB: Number((result.size / 1024 / 1024).toFixed(2)),
-
-      totalMB: Number((result.size / 1024 / 1024).toFixed(2)),
-
-      speedMBps: 0,
-
-      filename: safeFilename,
-
-      videoId: newVideo._id.toString(),
-    });
-
-    return res.status(201).json({
-      message: "Video downloaded and ready to watch",
-
-      video: {
-        id: newVideo._id,
-
-        title: newVideo.title,
-
-        videoUrl: newVideo.videoUrl,
-
-        thumbnailUrl: newVideo.thumbnailUrl,
-
-        duration: newVideo.duration,
-
-        format: newVideo.format,
-
-        size: newVideo.size,
-
-        cbc: newVideo.cbc,
-
-        expiresAt: newVideo.expiresAt,
-      },
-
-      watchUrl: `/watch/${newVideo._id}`,
-    });
-  } catch (error) {
-    console.error("CREATE WATCHABLE VIDEO ERROR:", error);
-
-    const jobId = req.body?.jobId;
-
-    if (jobId) {
-      setProgress(jobId, {
-        status: "error",
-
-        percentage: 0,
-
-        error: error.message || "Download failed",
-
-        filename: req.body?.filename || "",
-
-        videoId: null,
-      });
-    }
-
-    return res.status(500).json({
-      message: error.message || "Failed to create watchable video",
-    });
-  }
-};
-
-// ==========================================
-// CREATE WATCHABLE FROM WETRANSFER
-// ==========================================
-
-export const createWatchableFromWeTransfer = async (req, res) => {
-  const {
-    signedFileUrl,
-    sourceUrl = "",
-    title = "",
-    filename = "",
-    cbc = "",
-    expiresAt,
-    jobId: clientJobId,
-  } = req.body;
-
-  if (!signedFileUrl) {
-    return res.status(400).json({
-      success: false,
-
-      message: "signedFileUrl is required",
-    });
-  }
-
-  const expiryDate = getExpiryDate(expiresAt);
-
-  if (expiresAt && !expiryDate) {
-    return res.status(400).json({
-      success: false,
-
-      message: "Invalid expiresAt date",
-    });
-  }
-
-  const jobId = clientJobId || createJobId();
-
-  setProgress(jobId, {
-    status: "starting",
-
-    percentage: 0,
-
-    downloadedBytes: 0,
-
-    totalBytes: 0,
-
-    downloadedMB: 0,
-
-    totalMB: 0,
-
-    speedMBps: 0,
-
-    filename: filename || "",
-
-    videoId: null,
-
-    error: null,
-  });
-
-  res.status(202).json({
-    success: true,
-
-    message: "Video download started",
-
-    jobId,
-
-    videoId: null,
-  });
-
-  try {
-    const parsedUrl = new URL(signedFileUrl);
-
-    let safeFilename = filename;
-
-    if (!safeFilename) {
-      safeFilename = path.basename(parsedUrl.pathname);
-    }
-
-    safeFilename = getSafeFilename(safeFilename, `video-${Date.now()}.mp4`);
-
-    if (!path.extname(safeFilename)) {
-      safeFilename += ".mp4";
-    }
-
-    safeFilename = createVideoFilename(safeFilename);
-
-    const outputPath = path.join(VIDEO_FOLDER, safeFilename);
-
-    await fs.promises.mkdir(VIDEO_FOLDER, {
-      recursive: true,
-    });
-
-    console.log("=================================");
-
-    console.log("BACKGROUND VIDEO DOWNLOAD");
-
-    console.log("JOB ID:", jobId);
-
-    console.log("FILENAME:", safeFilename);
-
-    console.log("OUTPUT:", outputPath);
-
-    console.log("EXPIRES:", expiryDate);
-
-    console.log("=================================");
-
-    const downloaded = await downloadWeTransferVideo(
-      signedFileUrl,
-      outputPath,
-      0,
-      safeFilename,
-      jobId,
-    );
-
-    let duration = 0;
-
-    try {
-      duration = await getVideoDuration(outputPath);
-    } catch (error) {
-      console.warn("Could not determine duration:", error.message);
-    }
-
-    const extension = getExtension(safeFilename);
-
-    const newVideo = new Video({
-      title: title || getTitleFromFilename(safeFilename),
-
-      publicId: `wetransfer-${Date.now()}-${uuidv4().slice(0, 8)}`,
-
-      sourceUrl,
-
-      filename: safeFilename,
-
-      thumbnailUrl: "",
-
-      duration,
-
-      format: extension,
-
-      size: downloaded.size,
-
-      cbc: String(cbc || "").trim(),
-
-      /*
-       * EACH VIDEO GETS ITS OWN EXPIRY DATE
-       */
-      expiresAt: expiryDate,
-    });
-
-    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
-
-    await newVideo.save();
-
-    console.log("VIDEO CREATED:", newVideo._id);
-
-    console.log("VIDEO URL:", newVideo.videoUrl);
-
-    console.log("EXPIRES AT:", newVideo.expiresAt);
-
-    setProgress(jobId, {
-      status: "completed",
-
-      percentage: 100,
-
-      downloadedBytes: downloaded.size,
-
-      totalBytes: downloaded.size,
-
-      downloadedMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
-
-      totalMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
-
-      speedMBps: 0,
-
-      filename: safeFilename,
-
-      videoId: newVideo._id.toString(),
-
-      video: {
-        id: newVideo._id.toString(),
-
-        title: newVideo.title,
-
-        videoUrl: newVideo.videoUrl,
-
-        thumbnailUrl: newVideo.thumbnailUrl || "",
-
-        duration: newVideo.duration,
-
-        format: newVideo.format,
-
-        size: newVideo.size,
-
-        cbc: newVideo.cbc || "",
-
-        expiresAt: newVideo.expiresAt,
-      },
-
-      watchUrl: `/watch/${newVideo._id}`,
-    });
-
-    console.log("=================================");
-
-    console.log("JOB COMPLETED");
-
-    console.log("JOB ID:", jobId);
-
-    console.log("VIDEO ID:", newVideo._id.toString());
-
-    console.log("=================================");
-  } catch (error) {
-    console.error("BACKGROUND DOWNLOAD ERROR:", error);
-
-    setProgress(jobId, {
-      status: "error",
-
-      percentage: 0,
-
-      error: error.message || "Download failed",
-
-      filename: filename || "",
-
-      videoId: null,
-    });
-  }
-};
-
-// ==========================================
-// GET DOWNLOAD PROGRESS
-// ==========================================
-
-export const getDownloadProgress = async (req, res) => {
-  try {
-    const { jobId } = req.params;
-
-    if (!jobId) {
-      return res.status(400).json({
-        message: "jobId is required",
-      });
-    }
-
-    const progress = getProgress(jobId);
-
-    if (!progress) {
+    if (!video) {
       return res.status(404).json({
-        message: "Download job not found",
+        message: "Video not found",
       });
     }
 
-    return res.json(progress);
+    return res.json({
+      success: true,
+      message: "Video deleted successfully",
+    });
   } catch (error) {
-    console.error("GET DOWNLOAD PROGRESS ERROR:", error);
+    console.error("DELETE VIDEO ERROR:", error);
 
     return res.status(500).json({
-      message: "Failed to get download progress",
+      message: "Failed to delete video",
     });
   }
 };
 
 // ==========================================
-// STREAM VIDEO
+// STREAM / PROXY VIDEO
+// ==========================================
+//
+// Browser -> our server -> source server
+//
+// NO FILE IS SAVED.
 // ==========================================
 
 export const streamVideo = async (req, res) => {
+  let upstream = null;
+
   try {
     const { id } = req.params;
 
@@ -1171,228 +508,140 @@ export const streamVideo = async (req, res) => {
       });
     }
 
-    let filename = video.filename;
-
-    if (!filename && video.videoUrl) {
-      try {
-        const url = new URL(video.videoUrl);
-
-        filename = decodeURIComponent(path.basename(url.pathname));
-      } catch {
-        return res.status(400).json({
-          message: "Invalid stored video URL",
-        });
-      }
-    }
-
-    if (!filename) {
+    if (!video.sourceUrl) {
       return res.status(404).json({
-        message: "Video filename not found",
+        message: "Source video URL not found",
       });
     }
 
-    filename = path.basename(filename);
-
-    const filePath = path.join(VIDEO_FOLDER, filename);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({
-        message: "Video file not found",
-      });
-    }
-
-    const stat = await fs.promises.stat(filePath);
-
-    if (!stat.isFile()) {
-      return res.status(400).json({
-        message: "Video path is not a file",
-      });
-    }
-
-    const fileSize = stat.size;
-
-    const extension = path.extname(filename).replace(".", "").toLowerCase();
-
-    const mimeTypes = {
-      mp4: "video/mp4",
-      webm: "video/webm",
-      mov: "video/quicktime",
-      mkv: "video/x-matroska",
-      avi: "video/x-msvideo",
-      m4v: "video/x-m4v",
-    };
-
-    const contentType = mimeTypes[extension] || "video/mp4";
+    // ==========================================
+    // REQUEST RANGE
+    // ==========================================
 
     const range = req.headers.range;
 
-    // ==========================================
-    // NO RANGE
-    // ==========================================
+    const requestHeaders = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
 
-    if (!range) {
-      res.writeHead(200, {
-        "Content-Length": fileSize,
+      Accept: "video/*,*/*;q=0.8",
+    };
 
-        "Content-Type": contentType,
-
-        "Accept-Ranges": "bytes",
-
-        "Cache-Control": "no-cache",
-      });
-
-      const stream = fs.createReadStream(filePath);
-
-      stream.on("error", (error) => {
-        console.error("VIDEO STREAM ERROR:", error);
-
-        if (!res.headersSent) {
-          res.status(500).end();
-        } else {
-          res.destroy(error);
-        }
-      });
-
-      stream.pipe(res);
-
-      return;
+    if (range) {
+      requestHeaders.Range = range;
     }
 
     // ==========================================
-    // RANGE REQUEST
+    // REQUEST SOURCE
     // ==========================================
 
-    const rangeMatch = range.match(/bytes=(\d*)-(\d*)/);
+    upstream = await axios.get(video.sourceUrl, {
+      responseType: "stream",
 
-    if (!rangeMatch) {
-      return res.status(416).json({
-        message: "Invalid range request",
-      });
-    }
+      timeout: 30000,
 
-    let start = rangeMatch[1] !== "" ? parseInt(rangeMatch[1], 10) : 0;
+      maxRedirects: 10,
 
-    let end = rangeMatch[2] !== "" ? parseInt(rangeMatch[2], 10) : fileSize - 1;
+      validateStatus: (status) => status >= 200 && status < 400,
 
-    if (rangeMatch[1] === "" && rangeMatch[2] !== "") {
-      const suffixLength = parseInt(rangeMatch[2], 10);
+      headers: requestHeaders,
+    });
 
-      start = Math.max(0, fileSize - suffixLength);
+    const upstreamStatus = upstream.status;
 
-      end = fileSize - 1;
-    }
+    const contentType =
+      upstream.headers["content-type"] || getMimeType(video.format || "mp4");
+
+    const contentLength = upstream.headers["content-length"];
+
+    const contentRange = upstream.headers["content-range"];
+
+    const acceptRanges = upstream.headers["accept-ranges"] || "bytes";
+
+    // ==========================================
+    // IMPORTANT
+    // ==========================================
 
     if (
-      Number.isNaN(start) ||
-      Number.isNaN(end) ||
-      start < 0 ||
-      start >= fileSize ||
-      end < start
+      contentType.toLowerCase().includes("text/html") ||
+      contentType.toLowerCase().includes("application/json")
     ) {
-      return res.status(416).set("Content-Range", `bytes */${fileSize}`).json({
-        message: "Requested range not satisfiable",
+      upstream.data.destroy();
+
+      return res.status(502).json({
+        message:
+          "The source URL returned a webpage instead of a video file. Use the direct video/download URL.",
       });
     }
 
-    end = Math.min(end, fileSize - 1);
+    // ==========================================
+    // RESPONSE HEADERS
+    // ==========================================
 
-    const chunkSize = end - start + 1;
-
-    res.writeHead(206, {
-      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-
-      "Accept-Ranges": "bytes",
-
-      "Content-Length": chunkSize,
-
+    const headers = {
       "Content-Type": contentType,
 
-      "Cache-Control": "no-cache",
-    });
+      "Accept-Ranges": acceptRanges,
 
-    const stream = fs.createReadStream(filePath, {
-      start,
-      end,
-    });
+      "Cache-Control": "no-store",
 
-    stream.on("error", (error) => {
-      console.error("VIDEO STREAM ERROR:", error);
+      "Access-Control-Allow-Origin": "*",
+
+      "Access-Control-Allow-Headers": "Range",
+
+      "Access-Control-Expose-Headers":
+        "Content-Length, Content-Range, Accept-Ranges",
+    };
+
+    if (contentLength) {
+      headers["Content-Length"] = contentLength;
+    }
+
+    if (contentRange) {
+      headers["Content-Range"] = contentRange;
+    }
+
+    // ==========================================
+    // SEND STATUS
+    // ==========================================
+
+    res.writeHead(upstreamStatus === 206 ? 206 : 200, headers);
+
+    // ==========================================
+    // STREAM DIRECTLY
+    // ==========================================
+
+    upstream.data.on("error", (error) => {
+      console.error("UPSTREAM VIDEO ERROR:", error.message);
 
       if (!res.headersSent) {
-        res.status(500).end();
+        res.status(502).end();
       } else {
-        res.destroy(error);
+        res.destroy();
       }
     });
 
-    stream.pipe(res);
+    req.on("close", () => {
+      if (upstream?.data) {
+        upstream.data.destroy();
+      }
+    });
+
+    upstream.data.pipe(res);
   } catch (error) {
-    console.error("STREAM VIDEO ERROR:", error);
+    console.error("STREAM VIDEO ERROR:", error.response?.status, error.message);
+
+    if (upstream?.data) {
+      upstream.data.destroy();
+    }
 
     if (!res.headersSent) {
-      return res.status(500).json({
-        message: "Failed to stream video",
+      return res.status(502).json({
+        message:
+          "Unable to stream the source video. The source link may be expired or may not be a direct video URL.",
       });
     }
 
-    res.end();
-  }
-};
-
-// ==========================================
-// DELETE EXPIRED VIDEOS
-// ==========================================
-//
-// Call this periodically.
-// Each video uses its own expiresAt.
-//
-// ==========================================
-
-export const deleteExpiredVideos = async () => {
-  try {
-    const now = new Date();
-
-    const expiredVideos = await Video.find({
-      expiresAt: {
-        $exists: true,
-        $ne: null,
-        $lte: now,
-      },
-    });
-
-    console.log(`Found ${expiredVideos.length} expired videos`);
-
-    for (const video of expiredVideos) {
-      try {
-        if (video.filename) {
-          const filename = path.basename(video.filename);
-
-          const filePath = path.join(VIDEO_FOLDER, filename);
-
-          if (fs.existsSync(filePath)) {
-            await fs.promises.unlink(filePath);
-
-            console.log("Deleted file:", filePath);
-          }
-        }
-
-        await Video.findByIdAndDelete(video._id);
-
-        console.log("Deleted database record:", video._id.toString());
-      } catch (error) {
-        console.error("Failed to delete expired video:", video._id, error);
-      }
-    }
-
-    return {
-      deleted: expiredVideos.length,
-    };
-  } catch (error) {
-    console.error("DELETE EXPIRED VIDEOS ERROR:", error);
-
-    return {
-      deleted: 0,
-      error: error.message,
-    };
+    res.destroy();
   }
 };

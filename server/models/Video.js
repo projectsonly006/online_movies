@@ -8,20 +8,16 @@ const videoSchema = new mongoose.Schema(
       trim: true,
     },
 
-    videoUrl: {
-      type: String,
-      required: true,
-    },
-
     sourceUrl: {
       type: String,
-      default: "",
+      required: true,
       trim: true,
     },
 
     thumbnailUrl: {
       type: String,
       default: "",
+      trim: true,
     },
 
     duration: {
@@ -31,7 +27,13 @@ const videoSchema = new mongoose.Schema(
 
     format: {
       type: String,
-      default: "",
+      default: "mp4",
+      trim: true,
+    },
+
+    size: {
+      type: Number,
+      default: 0,
     },
 
     cbc: {
@@ -43,6 +45,12 @@ const videoSchema = new mongoose.Schema(
     expiresAt: {
       type: Date,
       default: null,
+    },
+
+    publicId: {
+      type: String,
+      unique: true,
+      required: true,
     },
   },
   {

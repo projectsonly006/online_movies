@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import "./Admin.css";
 import { api } from "../api";
 
@@ -14,6 +15,10 @@ function Admin() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  // ==========================================
+  // CHECK LOGIN
+  // ==========================================
+
   useEffect(() => {
     const token = localStorage.getItem("adminToken");
 
@@ -24,6 +29,10 @@ function Admin() {
     }
   }, [navigate]);
 
+  // ==========================================
+  // LOGOUT
+  // ==========================================
+
   const handleLogout = () => {
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminUser");
@@ -32,6 +41,10 @@ function Admin() {
       replace: true,
     });
   };
+
+  // ==========================================
+  // SUBMIT
+  // ==========================================
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -49,18 +62,29 @@ function Admin() {
       return;
     }
 
-    if (!title.trim()) {
+    const cleanTitle = title.trim();
+    const cleanUrl = url.trim();
+    const cleanCbc = cbc.trim();
+
+    if (!cleanTitle) {
       setError("Please enter the movie title.");
       return;
     }
 
-    if (!url.trim()) {
-      setError("Please enter the WeTransfer URL.");
+    if (!cleanUrl) {
+      setError("Please enter the video URL.");
       return;
     }
 
-    if (!cbc.trim()) {
+    if (!cleanCbc) {
       setError("Please select the CBC rating.");
+      return;
+    }
+
+    try {
+      new URL(cleanUrl);
+    } catch {
+      setError("Please enter a valid video URL.");
       return;
     }
 
@@ -72,17 +96,22 @@ function Admin() {
 
         headers: {
           "Content-Type": "application/json",
+
           Authorization: `Bearer ${token}`,
         },
 
         body: JSON.stringify({
-          title: title.trim(),
-          signedFileUrl: url.trim(),
-          cbc: cbc.trim(),
+          signedFileUrl: cleanUrl,
+
+          title: cleanTitle,
+
+          cbc: cleanCbc,
         }),
       });
 
       const data = await response.json();
+
+      console.log("CREATE MOVIE RESPONSE:", data);
 
       if (response.status === 401 || response.status === 403) {
         localStorage.removeItem("adminToken");
@@ -99,19 +128,25 @@ function Admin() {
         throw new Error(data.message || "Failed to add movie");
       }
 
+      setSuccess(
+        "Movie added successfully. It is now visible in the movie library.",
+      );
+
       setTitle("");
       setUrl("");
       setCbc("");
-
-      setSuccess("Movie added successfully!");
     } catch (error) {
-      console.error("CREATE VIDEO ERROR:", error);
+      console.error("ADD MOVIE ERROR:", error);
 
       setError(error.message || "Failed to add movie");
     } finally {
       setLoading(false);
     }
   };
+
+  // ==========================================
+  // ADMIN USER
+  // ==========================================
 
   let adminUser = null;
 
@@ -120,6 +155,10 @@ function Admin() {
   } catch {
     adminUser = null;
   }
+
+  // ==========================================
+  // RENDER
+  // ==========================================
 
   return (
     <main className="admin-page">
@@ -130,6 +169,7 @@ function Admin() {
 
             <div>
               <h1>Admin Dashboard</h1>
+
               <p>Manage your movie library</p>
             </div>
           </div>
@@ -154,11 +194,13 @@ function Admin() {
 
               <h2>Add Movie</h2>
 
-              <p>Add a movie using its authorized WeTransfer video URL.</p>
+              <p>Add a movie using its authorized video URL.</p>
             </div>
           </div>
 
           <form className="admin-form" onSubmit={handleSubmit}>
+            {/* TITLE */}
+
             <div className="form-group">
               <label htmlFor="movie-title">Movie Title</label>
 
@@ -172,23 +214,28 @@ function Admin() {
               />
             </div>
 
+            {/* URL */}
+
             <div className="form-group">
-              <label htmlFor="movie-url">WeTransfer Video URL</label>
+              <label htmlFor="movie-url">Video URL</label>
 
               <input
                 id="movie-url"
                 type="url"
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
-                placeholder="Paste WeTransfer URL"
+                placeholder="Paste the direct video URL"
                 disabled={loading}
                 required
               />
 
               <span className="input-help">
-                The URL must provide access to the authorized video.
+                The server stores this URL. The video is not downloaded or
+                stored on your server.
               </span>
             </div>
+
+            {/* CBC */}
 
             <div className="form-group">
               <label htmlFor="movie-cbc">CBC Rating</label>
@@ -202,11 +249,16 @@ function Admin() {
                 <option value="">Select rating</option>
 
                 <option value="U">U</option>
+
                 <option value="U/A">U/A</option>
+
                 <option value="A">A</option>
+
                 <option value="R">R</option>
               </select>
             </div>
+
+            {/* BUTTON */}
 
             <button
               className="add-movie-button"
@@ -217,7 +269,11 @@ function Admin() {
             </button>
           </form>
 
+          {/* ERROR */}
+
           {error && <div className="admin-message error">{error}</div>}
+
+          {/* SUCCESS */}
 
           {success && <div className="admin-message success">{success}</div>}
         </section>

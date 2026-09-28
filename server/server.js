@@ -1,33 +1,14 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
 
 import connectDB from "./config/db.js";
 import videoRoutes from "./routes/videoRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
-import restoreVideos from "./utils/restoreVideos.js";
 
 dotenv.config();
 
 const app = express();
-
-// ==========================================
-// PATH SETUP
-// ==========================================
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const videoFolder = process.env.VIDEO_FOLDER || path.join(__dirname, "videos");
-
-await fs.promises.mkdir(videoFolder, {
-  recursive: true,
-});
-
-console.log("Video folder:", videoFolder);
 
 // ==========================================
 // DATABASE
@@ -38,18 +19,35 @@ await connectDB();
 console.log("MongoDB ready");
 
 // ==========================================
-// RESTORE MISSING VIDEOS
-// ==========================================
-
-await restoreVideos();
-
-// ==========================================
 // CORS
 // ==========================================
 
+const allowedOrigins = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  : [];
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin(origin, callback) {
+      // Allow requests without an Origin header
+      // such as curl/server-to-server requests.
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.length === 0) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
+
     credentials: true,
   }),
 );
@@ -58,57 +56,11 @@ app.use(
 // JSON
 // ==========================================
 
-app.use(express.json());
-
-// ==========================================
-// SERVE VIDEO FILES
-// ==========================================
-
-app.use("/videos", express.static(videoFolder));
-
-// ==========================================
-// DEBUG VIDEOS
-// ==========================================
-
-app.get("/debug/videos", async (req, res) => {
-  try {
-    const files = await fs.promises.readdir(videoFolder);
-
-    res.json({
-      folder: videoFolder,
-      files,
-    });
-  } catch (error) {
-    console.error("DEBUG VIDEOS ERROR:", error);
-
-    res.status(500).json({
-      error: error.message,
-    });
-  }
-});
-
-// ==========================================
-// DISK SPACE
-// ==========================================
-
-app.get("/debug/disk", async (req, res) => {
-  try {
-    const { exec } = await import("child_process");
-    const { promisify } = await import("util");
-
-    const execAsync = promisify(exec);
-
-    const { stdout } = await execAsync("df -h /");
-
-    res.type("text").send(stdout);
-  } catch (error) {
-    console.error("DISK CHECK ERROR:", error);
-
-    res.status(500).json({
-      error: error.message,
-    });
-  }
-});
+app.use(
+  express.json({
+    limit: "1mb",
+  }),
+);
 
 // ==========================================
 // HEALTH CHECK
@@ -116,6 +68,7 @@ app.get("/debug/disk", async (req, res) => {
 
 app.get("/", (req, res) => {
   res.json({
+    success: true,
     message: "Video Link API is running",
   });
 });
@@ -137,15 +90,31 @@ app.use("/api/videos", videoRoutes);
 // ==========================================
 
 app.use((error, req, res, next) => {
-  console.error(error);
+  console.error("SERVER ERROR:", error);
 
-  res.status(500).json({
+  if (res.headersSent) {
+    return next(error);
+  }
+
+  return res.status(500).json({
+    success: false,
     message: error.message || "Something went wrong",
   });
 });
 
 // ==========================================
-// SERVEr
+// 404
+// ==========================================
+
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
+});
+
+// ==========================================
+// SERVER
 // ==========================================
 
 const PORT = process.env.PORT || 5000;

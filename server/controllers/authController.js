@@ -10,10 +10,11 @@ export const adminLogin = async (req, res) => {
       });
     }
 
-    if (
-      username !== process.env.ADMIN_USERNAME ||
-      password !== process.env.ADMIN_PASSWORD
-    ) {
+    const validUsername = username === process.env.ADMIN_USERNAME;
+
+    const validPassword = password === process.env.ADMIN_PASSWORD;
+
+    if (!validUsername || !validPassword) {
       return res.status(401).json({
         message: "Invalid username or password",
       });
