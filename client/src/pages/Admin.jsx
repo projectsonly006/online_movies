@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom";
 import "./Admin.css";
 import { api } from "../api";
 
+// ==========================================
+// EMPTY MOVIE
+// ==========================================
+
 const createEmptyMovie = () => ({
   title: "",
   url: "",
@@ -14,13 +18,13 @@ function Admin() {
 
   const pollingRef = useRef(null);
 
-  const [movies, setMovies] = useState([
-    createEmptyMovie(),
-    createEmptyMovie(),
-    createEmptyMovie(),
-    createEmptyMovie(),
-    createEmptyMovie(),
-  ]);
+  // ==========================================
+  // NUMBER OF MOVIES
+  // ==========================================
+
+  const [movieCount, setMovieCount] = useState("");
+
+  const [movies, setMovies] = useState([]);
 
   const [currentMovieIndex, setCurrentMovieIndex] = useState(0);
 
@@ -75,6 +79,45 @@ function Admin() {
   };
 
   // ==========================================
+  // CREATE MOVIE SLOTS
+  // ==========================================
+
+  const createMovieSlots = () => {
+    setError("");
+
+    setSuccess("");
+
+    setProgress(null);
+
+    const count = Number(movieCount);
+
+    // ========================================
+    // VALIDATION
+    // ========================================
+
+    if (!Number.isInteger(count) || count < 1) {
+      setError("Please enter a valid number of movies.");
+      return;
+    }
+
+    // Change this if you want a different maximum.
+    if (count > 50) {
+      setError("You can add a maximum of 50 movies at once.");
+      return;
+    }
+
+    // ========================================
+    // CREATE EXACT NUMBER OF MOVIES
+    // ========================================
+
+    const newMovies = Array.from({ length: count }, () => createEmptyMovie());
+
+    setMovies(newMovies);
+
+    setCurrentMovieIndex(0);
+  };
+
+  // ==========================================
   // UPDATE MOVIE FIELD
   // ==========================================
 
@@ -96,13 +139,9 @@ function Admin() {
   // ==========================================
 
   const resetForm = () => {
-    setMovies([
-      createEmptyMovie(),
-      createEmptyMovie(),
-      createEmptyMovie(),
-      createEmptyMovie(),
-      createEmptyMovie(),
-    ]);
+    setMovieCount("");
+
+    setMovies([]);
 
     setCurrentMovieIndex(0);
 
@@ -174,6 +213,10 @@ function Admin() {
 
     console.log(`CREATE MOVIE ${index + 1} RESPONSE:`, data);
 
+    // ========================================
+    // AUTH ERROR
+    // ========================================
+
     if (response.status === 401 || response.status === 403) {
       localStorage.removeItem("adminToken");
 
@@ -186,9 +229,17 @@ function Admin() {
       throw new Error("Admin session expired");
     }
 
+    // ========================================
+    // SERVER ERROR
+    // ========================================
+
     if (!response.ok) {
       throw new Error(data.message || `Failed to add movie ${index + 1}`);
     }
+
+    // ========================================
+    // WAIT FOR DOWNLOAD
+    // ========================================
 
     return new Promise((resolve, reject) => {
       let finished = false;
@@ -205,6 +256,10 @@ function Admin() {
           );
 
           const progressData = await progressResponse.json();
+
+          // ======================================
+          // AUTH ERROR
+          // ======================================
 
           if (
             progressResponse.status === 401 ||
@@ -303,6 +358,16 @@ function Admin() {
     }
 
     // ==========================================
+    // MAKE SURE SLOTS EXIST
+    // ==========================================
+
+    if (movies.length === 0) {
+      setError("Please enter the number of movies first.");
+
+      return;
+    }
+
+    // ==========================================
     // MOVIE 1 IS REQUIRED
     // ==========================================
 
@@ -327,7 +392,7 @@ function Admin() {
     }
 
     // ==========================================
-    // FIND MOVIES THAT WERE ACTUALLY FILLED
+    // FIND FILLED MOVIES
     // ==========================================
 
     const moviesToAdd = [];
@@ -343,13 +408,16 @@ function Admin() {
 
       const hasAnything = hasTitle || hasUrl || hasCbc;
 
-      // Empty optional slot
+      // ========================================
+      // EMPTY OPTIONAL SLOT
+      // ========================================
+
       if (!hasAnything) {
         continue;
       }
 
       // ========================================
-      // OPTIONAL MOVIE VALIDATION
+      // VALIDATE OPTIONAL MOVIE
       // ========================================
 
       if (index > 0) {
@@ -374,6 +442,7 @@ function Admin() {
 
       moviesToAdd.push({
         ...movie,
+
         index,
       });
     }
@@ -542,151 +611,227 @@ function Admin() {
 
               <h2>Add Movies</h2>
 
-              <p>Add up to 5 movies to your movie library.</p>
+              <p>Choose how many movie slots you want.</p>
             </div>
           </div>
 
-          <form className="admin-form" onSubmit={handleSubmit}>
-            {/* ==================================
-                MOVIE SLOTS
-            ================================== */}
+          {/* ====================================
+              NUMBER OF MOVIES
+          ==================================== */}
 
-            <div className="movie-slots">
-              {movies.map((movie, index) => {
-                const isRequired = index === 0;
+          {!loading && movies.length === 0 && (
+            <div className="movie-count-section">
+              <div className="form-group">
+                <label htmlFor="movie-count">
+                  How many movies do you want to add?
+                </label>
 
-                const isActive = currentMovieIndex === index && loading;
+                <input
+                  id="movie-count"
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={movieCount}
+                  onChange={(e) => setMovieCount(e.target.value)}
+                  placeholder="Example: 5"
+                />
 
-                return (
-                  <div
-                    className={`movie-slot ${
-                      isActive ? "movie-slot-active" : ""
-                    }`}
-                    key={index}
-                  >
-                    {/* SLOT HEADER */}
+                <span className="input-help">
+                  Enter any number from 1 to 50.
+                </span>
+              </div>
 
-                    <div className="movie-slot-header">
-                      <div>
-                        <span className="movie-slot-number">
-                          Movie {index + 1}
-                        </span>
+              <button
+                className="add-movie-button"
+                type="button"
+                onClick={createMovieSlots}
+              >
+                <span>＋</span>
+                Create Movie Slots
+              </button>
+            </div>
+          )}
 
-                        <h3>
-                          {isRequired ? "Required Movie" : "Optional Movie"}
-                        </h3>
+          {/* ====================================
+              MOVIE FORM
+          ==================================== */}
+
+          {movies.length > 0 && (
+            <form className="admin-form" onSubmit={handleSubmit}>
+              <div className="movie-count-info">
+                <strong>
+                  {movies.length} {movies.length === 1 ? "Movie" : "Movies"}
+                </strong>
+
+                <button
+                  type="button"
+                  className="change-count-button"
+                  onClick={() => {
+                    if (loading) return;
+
+                    setMovies([]);
+
+                    setMovieCount("");
+
+                    setError("");
+
+                    setSuccess("");
+
+                    setProgress(null);
+                  }}
+                  disabled={loading}
+                >
+                  Change Number
+                </button>
+              </div>
+
+              {/* ==================================
+                  MOVIE SLOTS
+              ================================== */}
+
+              <div className="movie-slots">
+                {movies.map((movie, index) => {
+                  const isRequired = index === 0;
+
+                  const isActive = currentMovieIndex === index && loading;
+
+                  return (
+                    <div
+                      className={`movie-slot ${
+                        isActive ? "movie-slot-active" : ""
+                      }`}
+                      key={index}
+                    >
+                      {/* SLOT HEADER */}
+
+                      <div className="movie-slot-header">
+                        <div>
+                          <span className="movie-slot-number">
+                            Movie {index + 1}
+                          </span>
+
+                          <h3>
+                            {isRequired ? "Required Movie" : "Optional Movie"}
+                          </h3>
+                        </div>
+
+                        {isActive && (
+                          <span className="movie-slot-status">Adding...</span>
+                        )}
                       </div>
 
-                      {isActive && (
-                        <span className="movie-slot-status">Adding...</span>
-                      )}
+                      {/* TITLE */}
+
+                      <div className="form-group">
+                        <label htmlFor={`movie-title-${index}`}>
+                          Movie Title
+                          {isRequired && (
+                            <span className="required-star">*</span>
+                          )}
+                        </label>
+
+                        <input
+                          id={`movie-title-${index}`}
+                          type="text"
+                          value={movie.title}
+                          onChange={(e) =>
+                            updateMovie(index, "title", e.target.value)
+                          }
+                          placeholder={
+                            isRequired
+                              ? "Enter movie title"
+                              : "Optional movie title"
+                          }
+                          disabled={loading}
+                          required={isRequired}
+                        />
+                      </div>
+
+                      {/* URL */}
+
+                      <div className="form-group">
+                        <label htmlFor={`movie-url-${index}`}>
+                          Video URL
+                          {isRequired && (
+                            <span className="required-star">*</span>
+                          )}
+                        </label>
+
+                        <input
+                          id={`movie-url-${index}`}
+                          type="url"
+                          value={movie.url}
+                          onChange={(e) =>
+                            updateMovie(index, "url", e.target.value)
+                          }
+                          placeholder="Paste the direct signed video URL"
+                          disabled={loading}
+                          required={isRequired}
+                        />
+
+                        <span className="input-help">
+                          Use the direct signed video download URL.
+                        </span>
+                      </div>
+
+                      {/* CBC */}
+
+                      <div className="form-group">
+                        <label htmlFor={`movie-cbc-${index}`}>
+                          CBC Rating
+                          {isRequired && (
+                            <span className="required-star">*</span>
+                          )}
+                        </label>
+
+                        <select
+                          id={`movie-cbc-${index}`}
+                          value={movie.cbc}
+                          onChange={(e) =>
+                            updateMovie(index, "cbc", e.target.value)
+                          }
+                          disabled={loading}
+                          required={isRequired}
+                        >
+                          <option value="">Select rating</option>
+
+                          <option value="U">U</option>
+
+                          <option value="U/A">U/A</option>
+
+                          <option value="A">A</option>
+
+                          <option value="R">R</option>
+                        </select>
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
 
-                    {/* TITLE */}
+              {/* ==================================
+                  SUBMIT
+              ================================== */}
 
-                    <div className="form-group">
-                      <label htmlFor={`movie-title-${index}`}>
-                        Movie Title
-                        {isRequired && <span className="required-star">*</span>}
-                      </label>
-
-                      <input
-                        id={`movie-title-${index}`}
-                        type="text"
-                        value={movie.title}
-                        onChange={(e) =>
-                          updateMovie(index, "title", e.target.value)
-                        }
-                        placeholder={
-                          isRequired
-                            ? "Enter movie title"
-                            : "Optional movie title"
-                        }
-                        disabled={loading}
-                        required={isRequired}
-                      />
-                    </div>
-
-                    {/* URL */}
-
-                    <div className="form-group">
-                      <label htmlFor={`movie-url-${index}`}>
-                        Video URL
-                        {isRequired && <span className="required-star">*</span>}
-                      </label>
-
-                      <input
-                        id={`movie-url-${index}`}
-                        type="url"
-                        value={movie.url}
-                        onChange={(e) =>
-                          updateMovie(index, "url", e.target.value)
-                        }
-                        placeholder="Paste the direct signed video URL"
-                        disabled={loading}
-                        required={isRequired}
-                      />
-
-                      <span className="input-help">
-                        Use the direct signed video download URL.
-                      </span>
-                    </div>
-
-                    {/* CBC */}
-
-                    <div className="form-group">
-                      <label htmlFor={`movie-cbc-${index}`}>
-                        CBC Rating
-                        {isRequired && <span className="required-star">*</span>}
-                      </label>
-
-                      <select
-                        id={`movie-cbc-${index}`}
-                        value={movie.cbc}
-                        onChange={(e) =>
-                          updateMovie(index, "cbc", e.target.value)
-                        }
-                        disabled={loading}
-                        required={isRequired}
-                      >
-                        <option value="">Select rating</option>
-
-                        <option value="U">U</option>
-
-                        <option value="U/A">U/A</option>
-
-                        <option value="A">A</option>
-
-                        <option value="R">R</option>
-                      </select>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* ==================================
-                BUTTON
-            ================================== */}
-
-            <button
-              className="add-movie-button"
-              type="submit"
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <span className="button-spinner"></span>
-                  Adding Movies...
-                </>
-              ) : (
-                <>
-                  <span>＋</span>
-                  Add Movies
-                </>
-              )}
-            </button>
-          </form>
+              <button
+                className="add-movie-button"
+                type="submit"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <span className="button-spinner"></span>
+                    Adding Movies...
+                  </>
+                ) : (
+                  <>
+                    <span>＋</span>
+                    Add Movies
+                  </>
+                )}
+              </button>
+            </form>
+          )}
 
           {/* ======================================
               PROGRESS
