@@ -11,12 +11,7 @@ function Watch() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // ==========================================
-  // VIDEO PLAYER STATE
-  // ==========================================
-
   const videoRef = useRef(null);
-  const progressRef = useRef(null);
   const controlsTimerRef = useRef(null);
 
   const [playing, setPlaying] = useState(false);
@@ -29,10 +24,6 @@ function Watch() {
   const [showSettings, setShowSettings] = useState(false);
   const [showControls, setShowControls] = useState(true);
 
-  // ==========================================
-  // FETCH VIDEO
-  // ==========================================
-
   useEffect(() => {
     const fetchVideo = async () => {
       try {
@@ -40,9 +31,8 @@ function Watch() {
         setError("");
 
         const response = await fetch(api(`/api/videos/${id}`));
-        const data = await response.json();
 
-        console.log("VIDEO DATA:", data);
+        const data = await response.json();
 
         if (!response.ok) {
           throw new Error(data.message || "Failed to load video");
@@ -61,10 +51,6 @@ function Watch() {
     fetchVideo();
   }, [id]);
 
-  // ==========================================
-  // CLEANUP CONTROL TIMER
-  // ==========================================
-
   useEffect(() => {
     return () => {
       if (controlsTimerRef.current) {
@@ -72,10 +58,6 @@ function Watch() {
       }
     };
   }, []);
-
-  // ==========================================
-  // AUTO-HIDE CONTROLS
-  // ==========================================
 
   const showPlayerControls = () => {
     setShowControls(true);
@@ -92,19 +74,6 @@ function Watch() {
     }
   };
 
-  const hidePlayerControls = () => {
-    if (controlsTimerRef.current) {
-      clearTimeout(controlsTimerRef.current);
-    }
-
-    setShowControls(false);
-    setShowSettings(false);
-  };
-
-  // ==========================================
-  // FORMAT TIME
-  // ==========================================
-
   const formatTime = (seconds) => {
     const time = Number(seconds || 0);
 
@@ -113,7 +82,9 @@ function Watch() {
     }
 
     const hours = Math.floor(time / 3600);
+
     const minutes = Math.floor((time % 3600) / 60);
+
     const remainingSeconds = Math.floor(time % 60);
 
     if (hours > 0) {
@@ -125,45 +96,25 @@ function Watch() {
     return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
   };
 
-  // ==========================================
-  // PLAY / PAUSE
-  // ==========================================
-
   const togglePlay = async () => {
-    const videoElement = videoRef.current;
+    const element = videoRef.current;
 
-    if (!videoElement) {
-      return;
-    }
+    if (!element) return;
 
     try {
-      if (videoElement.paused) {
-        await videoElement.play();
+      if (element.paused) {
+        await element.play();
       } else {
-        videoElement.pause();
+        element.pause();
       }
     } catch (error) {
       console.error("PLAY ERROR:", error);
     }
   };
 
-  // ==========================================
-  // VIDEO EVENTS
-  // ==========================================
-
   const handlePlay = () => {
     setPlaying(true);
-
-    setShowControls(true);
-
-    if (controlsTimerRef.current) {
-      clearTimeout(controlsTimerRef.current);
-    }
-
-    controlsTimerRef.current = setTimeout(() => {
-      setShowControls(false);
-      setShowSettings(false);
-    }, 3000);
+    showPlayerControls();
   };
 
   const handlePause = () => {
@@ -177,42 +128,21 @@ function Watch() {
   };
 
   const handleLoadedMetadata = () => {
-    if (!videoRef.current) {
-      return;
-    }
+    if (!videoRef.current) return;
 
     setVideoDuration(videoRef.current.duration || 0);
   };
 
   const handleTimeUpdate = () => {
-    if (!videoRef.current) {
-      return;
-    }
+    if (!videoRef.current) return;
 
     setCurrentTime(videoRef.current.currentTime || 0);
   };
 
-  const handleVideoEnded = () => {
-    setPlaying(false);
-
-    if (controlsTimerRef.current) {
-      clearTimeout(controlsTimerRef.current);
-    }
-
-    setShowControls(true);
-    setShowSettings(false);
-  };
-
-  // ==========================================
-  // SEEK
-  // ==========================================
-
   const handleSeek = (event) => {
     const value = Number(event.target.value);
 
-    if (!videoRef.current) {
-      return;
-    }
+    if (!videoRef.current) return;
 
     videoRef.current.currentTime = value;
     setCurrentTime(value);
@@ -220,14 +150,8 @@ function Watch() {
     showPlayerControls();
   };
 
-  // ==========================================
-  // SKIP
-  // ==========================================
-
   const skip = (seconds) => {
-    if (!videoRef.current) {
-      return;
-    }
+    if (!videoRef.current) return;
 
     videoRef.current.currentTime = Math.max(
       0,
@@ -240,16 +164,10 @@ function Watch() {
     showPlayerControls();
   };
 
-  // ==========================================
-  // VOLUME
-  // ==========================================
-
   const handleVolume = (event) => {
     const value = Number(event.target.value);
 
-    if (!videoRef.current) {
-      return;
-    }
+    if (!videoRef.current) return;
 
     videoRef.current.volume = value;
 
@@ -262,14 +180,8 @@ function Watch() {
     showPlayerControls();
   };
 
-  // ==========================================
-  // MUTE
-  // ==========================================
-
   const toggleMute = () => {
-    if (!videoRef.current) {
-      return;
-    }
+    if (!videoRef.current) return;
 
     videoRef.current.muted = !videoRef.current.muted;
 
@@ -278,14 +190,8 @@ function Watch() {
     showPlayerControls();
   };
 
-  // ==========================================
-  // PLAYBACK SPEED
-  // ==========================================
-
   const changePlaybackRate = (rate) => {
-    if (!videoRef.current) {
-      return;
-    }
+    if (!videoRef.current) return;
 
     videoRef.current.playbackRate = rate;
 
@@ -295,24 +201,16 @@ function Watch() {
     showPlayerControls();
   };
 
-  // ==========================================
-  // FULLSCREEN
-  // ==========================================
-
   const toggleFullscreen = async () => {
     const wrapper = document.querySelector(".custom-video-player");
 
-    if (!wrapper) {
-      return;
-    }
+    if (!wrapper) return;
 
     try {
       if (!document.fullscreenElement) {
         await wrapper.requestFullscreen();
-        setFullscreen(true);
       } else {
         await document.exitFullscreen();
-        setFullscreen(false);
       }
     } catch (error) {
       console.error("FULLSCREEN ERROR:", error);
@@ -321,19 +219,11 @@ function Watch() {
     showPlayerControls();
   };
 
-  // ==========================================
-  // FULLSCREEN CHANGE
-  // ==========================================
-
   useEffect(() => {
     const handleFullscreenChange = () => {
       setFullscreen(Boolean(document.fullscreenElement));
 
-      if (document.fullscreenElement) {
-        showPlayerControls();
-      } else {
-        setShowControls(true);
-      }
+      setShowControls(true);
     };
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -342,10 +232,6 @@ function Watch() {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
-
-  // ==========================================
-  // KEYBOARD CONTROLS
-  // ==========================================
 
   useEffect(() => {
     const handleKeyboard = (event) => {
@@ -357,16 +243,13 @@ function Watch() {
         return;
       }
 
-      if (!videoRef.current) {
-        return;
-      }
+      if (!videoRef.current) return;
 
       switch (event.key.toLowerCase()) {
         case " ":
         case "k":
           event.preventDefault();
           togglePlay();
-          showPlayerControls();
           break;
 
         case "arrowleft":
@@ -401,15 +284,11 @@ function Watch() {
     };
   }, []);
 
-  // ==========================================
-  // LOADING
-  // ==========================================
-
   if (loading) {
     return (
       <main className="watch-page">
         <div className="watch-loading">
-          <div className="watch-spinner"></div>
+          <div className="watch-spinner" />
 
           <h2>Loading video...</h2>
 
@@ -418,10 +297,6 @@ function Watch() {
       </main>
     );
   }
-
-  // ==========================================
-  // ERROR
-  // ==========================================
 
   if (error) {
     return (
@@ -439,10 +314,6 @@ function Watch() {
     );
   }
 
-  // ==========================================
-  // VIDEO NOT FOUND
-  // ==========================================
-
   if (!video) {
     return (
       <main className="watch-page">
@@ -459,30 +330,20 @@ function Watch() {
     );
   }
 
-  // ==========================================
-  // VIDEO DATA
-  // ==========================================
-
   const duration = Number(video.duration || 0);
 
   const displayDuration = videoDuration || duration;
 
-  const format = (video.format || "mp4").toUpperCase();
+  const format = (video.format || "video").toUpperCase();
 
   const progressPercentage =
     displayDuration > 0
       ? Math.min(100, Math.max(0, (currentTime / displayDuration) * 100))
       : 0;
 
-  // ==========================================
-  // PLAYER
-  // ==========================================
-
   return (
     <main className="watch-page">
       <div className="watch-container">
-        {/* HEADER */}
-
         <header className="watch-header">
           <button className="back-button" onClick={() => navigate("/")}>
             ←<span>Back</span>
@@ -493,11 +354,7 @@ function Watch() {
           </div>
         </header>
 
-        {/* VIDEO CARD */}
-
         <section className="watch-card">
-          {/* CUSTOM VIDEO PLAYER */}
-
           <div
             className={`custom-video-player ${
               fullscreen ? "is-fullscreen" : ""
@@ -505,13 +362,13 @@ function Watch() {
             onMouseMove={showPlayerControls}
             onTouchStart={showPlayerControls}
           >
-            {/* VIDEO */}
-
             <video
               ref={videoRef}
               className="video-player"
               preload="metadata"
-              src={api(`/api/videos/stream/${video.id}`)}
+              // IMPORTANT:
+              // Directly use the resolved URL.
+              src={video.videoUrl}
               controls={false}
               controlsList="nodownload"
               disablePictureInPicture
@@ -520,27 +377,25 @@ function Watch() {
               onPause={handlePause}
               onLoadedMetadata={handleLoadedMetadata}
               onTimeUpdate={handleTimeUpdate}
-              onEnded={handleVideoEnded}
+              onEnded={() => {
+                setPlaying(false);
+                setShowControls(true);
+              }}
               onClick={() => {
                 togglePlay();
                 showPlayerControls();
               }}
             />
 
-            {/* CENTER PLAY BUTTON */}
-
             {!playing && (
               <button
                 className="center-play-button"
                 onClick={togglePlay}
-                onTouchStart={showPlayerControls}
                 aria-label="Play video"
               >
                 <span className="center-play-icon">▶</span>
               </button>
             )}
-
-            {/* CONTROLS */}
 
             <div
               className={`player-controls ${
@@ -550,16 +405,9 @@ function Watch() {
                 event.stopPropagation();
                 showPlayerControls();
               }}
-              onTouchStart={(event) => {
-                event.stopPropagation();
-                showPlayerControls();
-              }}
             >
-              {/* PROGRESS */}
-
               <div className="progress-container">
                 <input
-                  ref={progressRef}
                   className="video-progress"
                   type="range"
                   min="0"
@@ -573,47 +421,21 @@ function Watch() {
                 />
               </div>
 
-              {/* BOTTOM CONTROLS */}
-
               <div className="controls-row">
                 <div className="controls-left">
-                  {/* PLAY */}
-
-                  <button
-                    className="player-button"
-                    onClick={togglePlay}
-                    title={playing ? "Pause" : "Play"}
-                  >
+                  <button className="player-button" onClick={togglePlay}>
                     {playing ? "❚❚" : "▶"}
                   </button>
 
-                  {/* BACK 5 */}
-
-                  <button
-                    className="player-button skip-button"
-                    onClick={() => skip(-5)}
-                    title="Back 5 seconds"
-                  >
+                  <button className="player-button" onClick={() => skip(-5)}>
                     ↶
                   </button>
 
-                  {/* FORWARD 5 */}
-
-                  <button
-                    className="player-button skip-button"
-                    onClick={() => skip(5)}
-                    title="Forward 5 seconds"
-                  >
+                  <button className="player-button" onClick={() => skip(5)}>
                     ↷
                   </button>
 
-                  {/* VOLUME */}
-
-                  <button
-                    className="player-button"
-                    onClick={toggleMute}
-                    title={muted ? "Unmute" : "Mute"}
-                  >
+                  <button className="player-button" onClick={toggleMute}>
                     {muted || volume === 0 ? "🔇" : "🔊"}
                   </button>
 
@@ -625,31 +447,18 @@ function Watch() {
                     step="0.01"
                     value={muted ? 0 : volume}
                     onChange={handleVolume}
-                    style={{
-                      "--volume": `${(muted ? 0 : volume) * 100}%`,
-                    }}
                   />
-
-                  {/* TIME */}
 
                   <span className="player-time">
                     {formatTime(currentTime)} / {formatTime(displayDuration)}
                   </span>
                 </div>
 
-                {/* RIGHT CONTROLS */}
-
                 <div className="controls-right">
-                  {/* SETTINGS */}
-
                   <div className="settings-container">
                     <button
                       className="player-button settings-button"
-                      onClick={() => {
-                        setShowSettings((current) => !current);
-                        showPlayerControls();
-                      }}
-                      title="Settings"
+                      onClick={() => setShowSettings((value) => !value)}
                     >
                       ⚙
                     </button>
@@ -675,21 +484,13 @@ function Watch() {
                     )}
                   </div>
 
-                  {/* FULLSCREEN */}
-
-                  <button
-                    className="player-button"
-                    onClick={toggleFullscreen}
-                    title="Fullscreen"
-                  >
+                  <button className="player-button" onClick={toggleFullscreen}>
                     ⛶
                   </button>
                 </div>
               </div>
             </div>
           </div>
-
-          {/* VIDEO INFORMATION */}
 
           <div className="video-info">
             <div className="video-title-section">
@@ -699,10 +500,8 @@ function Watch() {
             </div>
 
             <div className="video-details">
-              {/* DURATION */}
-
               <div className="video-detail">
-                <div className="detail-icon duration-icon">◷</div>
+                <div className="detail-icon">◷</div>
 
                 <div>
                   <span>Duration</span>
@@ -711,10 +510,8 @@ function Watch() {
                 </div>
               </div>
 
-              {/* FORMAT */}
-
               <div className="video-detail">
-                <div className="detail-icon format-icon">▣</div>
+                <div className="detail-icon">▣</div>
 
                 <div>
                   <span>Format</span>
@@ -723,27 +520,21 @@ function Watch() {
                 </div>
               </div>
 
-              {/* CBC */}
-
               <div className="video-detail">
-                <div className="detail-icon cbc-icon">CBC</div>
+                <div className="detail-icon">CBC</div>
 
                 <div>
-                  <p>
-                    <strong>{video.cbc || "N/A"}</strong>
+                  <span>Rating</span>
 
-                    <span> Rating </span>
-                  </p>
+                  <strong>{video.cbc || "N/A"}</strong>
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* FOOTER */}
-
         <footer className="watch-footer">
-          <span className="online-dot"></span>
+          <span className="online-dot" />
           Video is ready to watch
         </footer>
       </div>

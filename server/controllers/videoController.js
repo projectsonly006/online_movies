@@ -34,10 +34,6 @@ function getSafeFilename(filename, fallback = "download.mp4") {
   return safeFilename;
 }
 
-// ==========================================
-// CREATE UNIQUE VIDEO FILENAME
-// ==========================================
-
 function createVideoFilename(originalFilename) {
   const extension = path.extname(originalFilename || ".mp4") || ".mp4";
 
@@ -51,21 +47,17 @@ function createVideoFilename(originalFilename) {
   return `${safeBaseName}-${Date.now()}-${uuidv4().slice(0, 8)}${extension}`;
 }
 
-// ==========================================
-// VIDEO URL
-// Uses MongoDB video ID
-// ==========================================
-
 function getVideoUrl(videoId) {
   return `${SERVER_URL}/api/videos/stream/${videoId}`;
 }
 
-// ==========================================
-// FILE HELPERS
-// ==========================================
-
 function getExtension(filename) {
-  return path.extname(filename).replace(".", "").toLowerCase() || "mp4";
+  return (
+    path
+      .extname(filename || "")
+      .replace(".", "")
+      .toLowerCase() || "mp4"
+  );
 }
 
 function getTitleFromFilename(filename) {
@@ -74,6 +66,24 @@ function getTitleFromFilename(filename) {
 
 function createJobId() {
   return `job-${Date.now()}-${uuidv4().slice(0, 8)}`;
+}
+
+// ==========================================
+// EXPIRY HELPER
+// ==========================================
+
+function getExpiryDate(expiresAt) {
+  if (!expiresAt) {
+    return null;
+  }
+
+  const date = new Date(expiresAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
 }
 
 // ==========================================
@@ -92,11 +102,14 @@ export const uploadVideo = async (req, res) => {
       recursive: true,
     });
 
+    const { title = "", cbc = "", expiresAt, sourceUrl = "" } = req.body;
+
+    const expiryDate = getExpiryDate(expiresAt);
+
     const safeFilename = createVideoFilename(req.file.originalname);
 
     const outputPath = path.join(VIDEO_FOLDER, safeFilename);
 
-    // Save uploaded file
     await fs.promises.writeFile(outputPath, req.file.buffer);
 
     const stats = await fs.promises.stat(outputPath);
@@ -114,14 +127,10 @@ export const uploadVideo = async (req, res) => {
 
     const extension = getExtension(safeFilename);
 
-    // ==========================================
-    // CREATE DATABASE RECORD
-    // ==========================================
-
     const newVideo = new Video({
-      title: title || getTitleFromFilename(safeFilename),
+      title: title.trim() || getTitleFromFilename(safeFilename),
 
-      publicId: `wetransfer-${Date.now()}`,
+      publicId: `upload-${Date.now()}-${uuidv4().slice(0, 8)}`,
 
       sourceUrl,
 
@@ -133,16 +142,13 @@ export const uploadVideo = async (req, res) => {
 
       format: extension,
 
-      size: downloaded.size,
+      size: stats.size,
 
-      cbc: cbc.trim(),
+      cbc: String(cbc || "").trim(),
+
+      expiresAt: expiryDate,
     });
 
-    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
-
-    await newVideo.save();
-
-    // URL uses MongoDB ID
     newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
 
     await newVideo.save();
@@ -154,6 +160,7 @@ export const uploadVideo = async (req, res) => {
     console.log("Size:", stats.size);
     console.log("Duration:", duration);
     console.log("Video ID:", newVideo._id);
+    console.log("Expires:", newVideo.expiresAt);
     console.log("Video URL:", newVideo.videoUrl);
     console.log("=================================");
 
@@ -189,17 +196,16 @@ export const createVideoFromUrl = async (req, res) => {
       cbc = "",
       sourceUrl = "",
       filename = "",
+      expiresAt,
     } = req.body;
-
-    console.log("=================================");
-    console.log("CREATE VIDEO FROM URL");
-    console.log("=================================");
 
     if (!videoUrl) {
       return res.status(400).json({
         message: "videoUrl is required",
       });
     }
+
+    const expiryDate = getExpiryDate(expiresAt);
 
     let safeFilename;
 
@@ -217,31 +223,37 @@ export const createVideoFromUrl = async (req, res) => {
       );
     }
 
-    const newVideo = new Video({
-      title: title || getTitleFromFilename(safeFilename),
+    const extension = getExtension(safeFilename || `video.${format}`);
 
-      publicId: `wetransfer-${Date.now()}`,
+    const newVideo = new Video({
+      title: title.trim() || getTitleFromFilename(safeFilename),
+
+      publicId: `url-${Date.now()}-${uuidv4().slice(0, 8)}`,
 
       sourceUrl,
 
       filename: safeFilename,
 
-      thumbnailUrl: "",
+      thumbnailUrl,
 
-      duration,
+      duration: Number(duration) || 0,
 
       format: extension,
 
-      size: downloaded.size,
+      size: Number(size) || 0,
 
-      cbc: cbc.trim(),
+      cbc: String(cbc || "").trim(),
+
+      expiresAt: expiryDate,
     });
 
+    /*
+     * IMPORTANT:
+     * This URL points to our server's stream endpoint.
+     */
     newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
 
     await newVideo.save();
-
-    console.log("VIDEO CREATED:", newVideo._id);
 
     return res.status(201).json({
       message: "Video link created successfully",
@@ -265,11 +277,13 @@ export const createVideoFromUrl = async (req, res) => {
 
 export const createLocalVideo = async (req, res) => {
   try {
-    const { title = "", filename, cbc = "" } = req.body;
-
-    console.log("=================================");
-    console.log("CREATE LOCAL VIDEO");
-    console.log("=================================");
+    const {
+      title = "",
+      filename,
+      cbc = "",
+      expiresAt,
+      sourceUrl = "",
+    } = req.body;
 
     if (!filename) {
       return res.status(400).json({
@@ -280,8 +294,6 @@ export const createLocalVideo = async (req, res) => {
     const safeFilename = getSafeFilename(filename);
 
     const filePath = path.join(VIDEO_FOLDER, safeFilename);
-
-    console.log("File:", filePath);
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({
@@ -297,6 +309,8 @@ export const createLocalVideo = async (req, res) => {
       });
     }
 
+    const expiryDate = getExpiryDate(expiresAt);
+
     let duration = 0;
 
     try {
@@ -307,14 +321,10 @@ export const createLocalVideo = async (req, res) => {
 
     const extension = getExtension(safeFilename);
 
-    // ==========================================
-    // CREATE DATABASE RECORD
-    // ==========================================
-
     const newVideo = new Video({
-      title: title || getTitleFromFilename(safeFilename),
+      title: title.trim() || getTitleFromFilename(safeFilename),
 
-      publicId: `wetransfer-${Date.now()}`,
+      publicId: `local-${Date.now()}-${uuidv4().slice(0, 8)}`,
 
       sourceUrl,
 
@@ -326,22 +336,16 @@ export const createLocalVideo = async (req, res) => {
 
       format: extension,
 
-      size: downloaded.size,
+      size: stats.size,
 
-      cbc: cbc.trim(),
+      cbc: String(cbc || "").trim(),
+
+      expiresAt: expiryDate,
     });
 
     newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
 
     await newVideo.save();
-
-    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
-
-    await newVideo.save();
-
-    console.log("VIDEO CREATED:", newVideo._id);
-
-    console.log("VIDEO URL:", newVideo.videoUrl);
 
     return res.status(201).json({
       message: "Local video added successfully",
@@ -366,7 +370,9 @@ export const createLocalVideo = async (req, res) => {
 export const getVideos = async (req, res) => {
   try {
     const videos = await Video.find()
-      .select("_id title thumbnailUrl duration format size cbc createdAt")
+      .select(
+        "_id title thumbnailUrl duration format size cbc createdAt expiresAt",
+      )
       .sort({
         createdAt: -1,
       });
@@ -427,6 +433,8 @@ export const getVideo = async (req, res) => {
       cbc: video.cbc || "",
 
       createdAt: video.createdAt,
+
+      expiresAt: video.expiresAt || null,
     });
   } catch (error) {
     console.error("GET VIDEO ERROR:", error);
@@ -445,7 +453,7 @@ export const updateVideo = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { videoUrl, title, thumbnailUrl, cbc } = req.body;
+    const { videoUrl, title, thumbnailUrl, cbc, expiresAt } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -453,30 +461,44 @@ export const updateVideo = async (req, res) => {
       });
     }
 
-    const video = await Video.findByIdAndUpdate(
-      id,
-      {
-        ...(videoUrl !== undefined && {
-          videoUrl,
-        }),
+    let expiryDate;
 
-        ...(title !== undefined && {
-          title,
-        }),
+    if (expiresAt !== undefined) {
+      expiryDate = getExpiryDate(expiresAt);
 
-        ...(thumbnailUrl !== undefined && {
-          thumbnailUrl,
-        }),
+      if (expiresAt && !expiryDate) {
+        return res.status(400).json({
+          message: "Invalid expiresAt date",
+        });
+      }
+    }
 
-        ...(cbc !== undefined && {
-          cbc,
-        }),
-      },
-      {
-        new: true,
-        runValidators: true,
-      },
-    );
+    const updateData = {};
+
+    if (videoUrl !== undefined) {
+      updateData.videoUrl = videoUrl;
+    }
+
+    if (title !== undefined) {
+      updateData.title = title;
+    }
+
+    if (thumbnailUrl !== undefined) {
+      updateData.thumbnailUrl = thumbnailUrl;
+    }
+
+    if (cbc !== undefined) {
+      updateData.cbc = cbc;
+    }
+
+    if (expiresAt !== undefined) {
+      updateData.expiresAt = expiryDate;
+    }
+
+    const video = await Video.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    });
 
     if (!video) {
       return res.status(404).json({
@@ -509,14 +531,6 @@ async function downloadWeTransferVideo(
   filename = "download.mp4",
   jobId = null,
 ) {
-  console.log("=================================");
-  console.log("DOWNLOADING FILE");
-  console.log("=================================");
-
-  console.log("OUTPUT:", outputPath);
-  console.log("EXPECTED SIZE:", expectedSize);
-  console.log("JOB ID:", jobId);
-
   await fs.promises.mkdir(path.dirname(outputPath), {
     recursive: true,
   });
@@ -543,12 +557,6 @@ async function downloadWeTransferVideo(
   const contentType = response.headers["content-type"] || "";
 
   const contentLength = Number(response.headers["content-length"] || 0);
-
-  console.log("STATUS:", response.status);
-
-  console.log("CONTENT TYPE:", contentType);
-
-  console.log("CONTENT LENGTH:", contentLength);
 
   if (
     contentType.toLowerCase().includes("text/html") ||
@@ -686,22 +694,10 @@ async function downloadWeTransferVideo(
     throw error;
   }
 
-  console.log("\n=================================");
-
-  console.log("DOWNLOAD COMPLETE");
-
-  console.log("=================================");
-
   const stats = await fs.promises.stat(outputPath);
 
   if (stats.size === 0) {
     throw new Error("Downloaded file is empty");
-  }
-
-  if (expectedSize > 0 && stats.size !== Number(expectedSize)) {
-    console.warn(
-      `Expected ${expectedSize} bytes but downloaded ${stats.size} bytes`,
-    );
   }
 
   if (jobId) {
@@ -751,6 +747,7 @@ export const testDownloadVideo = async (req, res) => {
       title = "",
       cbc = "",
       jobId,
+      expiresAt,
     } = req.body;
 
     if (!signedFileUrl) {
@@ -765,13 +762,11 @@ export const testDownloadVideo = async (req, res) => {
       });
     }
 
+    const expiryDate = getExpiryDate(expiresAt);
+
     const safeFilename = getSafeFilename(filename, `video-${Date.now()}.mp4`);
 
     const outputPath = path.join(VIDEO_FOLDER, safeFilename);
-
-    await fs.promises.mkdir(VIDEO_FOLDER, {
-      recursive: true,
-    });
 
     const result = await downloadWeTransferVideo(
       signedFileUrl,
@@ -791,14 +786,10 @@ export const testDownloadVideo = async (req, res) => {
 
     const extension = getExtension(safeFilename);
 
-    // ==========================================
-    // DATABASE
-    // ==========================================
-
     const newVideo = new Video({
       title: title || getTitleFromFilename(safeFilename),
 
-      publicId: `wetransfer-${Date.now()}`,
+      publicId: `wetransfer-${Date.now()}-${uuidv4().slice(0, 8)}`,
 
       sourceUrl,
 
@@ -810,22 +801,16 @@ export const testDownloadVideo = async (req, res) => {
 
       format: extension,
 
-      size: downloaded.size,
+      size: result.size,
 
-      cbc: cbc.trim(),
+      cbc: String(cbc || "").trim(),
+
+      expiresAt: expiryDate,
     });
 
     newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
 
     await newVideo.save();
-
-    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
-
-    await newVideo.save();
-
-    console.log("VIDEO CREATED:", newVideo._id);
-
-    console.log("VIDEO URL:", newVideo.videoUrl);
 
     setProgress(jobId, {
       status: "completed",
@@ -866,6 +851,8 @@ export const testDownloadVideo = async (req, res) => {
         size: newVideo.size,
 
         cbc: newVideo.cbc,
+
+        expiresAt: newVideo.expiresAt,
       },
 
       watchUrl: `/watch/${newVideo._id}`,
@@ -897,7 +884,6 @@ export const testDownloadVideo = async (req, res) => {
 
 // ==========================================
 // CREATE WATCHABLE FROM WETRANSFER
-// BACKGROUND DOWNLOAD
 // ==========================================
 
 export const createWatchableFromWeTransfer = async (req, res) => {
@@ -907,6 +893,7 @@ export const createWatchableFromWeTransfer = async (req, res) => {
     title = "",
     filename = "",
     cbc = "",
+    expiresAt,
     jobId: clientJobId,
   } = req.body;
 
@@ -915,6 +902,16 @@ export const createWatchableFromWeTransfer = async (req, res) => {
       success: false,
 
       message: "signedFileUrl is required",
+    });
+  }
+
+  const expiryDate = getExpiryDate(expiresAt);
+
+  if (expiresAt && !expiryDate) {
+    return res.status(400).json({
+      success: false,
+
+      message: "Invalid expiresAt date",
     });
   }
 
@@ -952,10 +949,6 @@ export const createWatchableFromWeTransfer = async (req, res) => {
     videoId: null,
   });
 
-  // ==========================================
-  // BACKGROUND WORK
-  // ==========================================
-
   try {
     const parsedUrl = new URL(signedFileUrl);
 
@@ -971,7 +964,6 @@ export const createWatchableFromWeTransfer = async (req, res) => {
       safeFilename += ".mp4";
     }
 
-    // Make filename unique
     safeFilename = createVideoFilename(safeFilename);
 
     const outputPath = path.join(VIDEO_FOLDER, safeFilename);
@@ -984,13 +976,13 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 
     console.log("BACKGROUND VIDEO DOWNLOAD");
 
-    console.log("=================================");
-
     console.log("JOB ID:", jobId);
 
     console.log("FILENAME:", safeFilename);
 
     console.log("OUTPUT:", outputPath);
+
+    console.log("EXPIRES:", expiryDate);
 
     console.log("=================================");
 
@@ -1002,28 +994,6 @@ export const createWatchableFromWeTransfer = async (req, res) => {
       jobId,
     );
 
-    setProgress(jobId, {
-      status: "processing",
-
-      percentage: 100,
-
-      downloadedBytes: downloaded.size,
-
-      totalBytes: downloaded.size,
-
-      downloadedMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
-
-      totalMB: Number((downloaded.size / 1024 / 1024).toFixed(2)),
-
-      speedMBps: 0,
-
-      filename: safeFilename,
-    });
-
-    // ==========================================
-    // VIDEO DURATION
-    // ==========================================
-
     let duration = 0;
 
     try {
@@ -1032,16 +1002,12 @@ export const createWatchableFromWeTransfer = async (req, res) => {
       console.warn("Could not determine duration:", error.message);
     }
 
-    // ==========================================
-    // DATABASE
-    // ==========================================
-
     const extension = getExtension(safeFilename);
 
     const newVideo = new Video({
       title: title || getTitleFromFilename(safeFilename),
 
-      publicId: `wetransfer-${Date.now()}`,
+      publicId: `wetransfer-${Date.now()}-${uuidv4().slice(0, 8)}`,
 
       sourceUrl,
 
@@ -1055,17 +1021,13 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 
       size: downloaded.size,
 
-      cbc: cbc.trim(),
+      cbc: String(cbc || "").trim(),
+
+      /*
+       * EACH VIDEO GETS ITS OWN EXPIRY DATE
+       */
+      expiresAt: expiryDate,
     });
-
-    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
-
-    await newVideo.save();
-
-    // ==========================================
-    // IMPORTANT:
-    // URL USES MONGODB VIDEO Id
-    // ==========================================
 
     newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
 
@@ -1075,9 +1037,7 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 
     console.log("VIDEO URL:", newVideo.videoUrl);
 
-    // ==========================================
-    // COMPLETE
-    // ==========================================
+    console.log("EXPIRES AT:", newVideo.expiresAt);
 
     setProgress(jobId, {
       status: "completed",
@@ -1114,6 +1074,8 @@ export const createWatchableFromWeTransfer = async (req, res) => {
         size: newVideo.size,
 
         cbc: newVideo.cbc || "",
+
+        expiresAt: newVideo.expiresAt,
       },
 
       watchUrl: `/watch/${newVideo._id}`,
@@ -1199,11 +1161,17 @@ export const streamVideo = async (req, res) => {
       });
     }
 
-    let filename = video.filename;
+    // ==========================================
+    // CHECK EXPIRY
+    // ==========================================
 
-    // ==========================================
-    // FALLBACK FOR OLD RECORDS
-    // ==========================================
+    if (video.expiresAt && new Date() >= new Date(video.expiresAt)) {
+      return res.status(410).json({
+        message: "This video has expired",
+      });
+    }
+
+    let filename = video.filename;
 
     if (!filename && video.videoUrl) {
       try {
@@ -1223,7 +1191,6 @@ export const streamVideo = async (req, res) => {
       });
     }
 
-    // Prevent path traversal
     filename = path.basename(filename);
 
     const filePath = path.join(VIDEO_FOLDER, filename);
@@ -1270,6 +1237,8 @@ export const streamVideo = async (req, res) => {
         "Content-Type": contentType,
 
         "Accept-Ranges": "bytes",
+
+        "Cache-Control": "no-cache",
       });
 
       const stream = fs.createReadStream(filePath);
@@ -1305,11 +1274,6 @@ export const streamVideo = async (req, res) => {
 
     let end = rangeMatch[2] !== "" ? parseInt(rangeMatch[2], 10) : fileSize - 1;
 
-    // ==========================================
-    // SUFFIX RANGE
-    // bytes=-500
-    // ==========================================
-
     if (rangeMatch[1] === "" && rangeMatch[2] !== "") {
       const suffixLength = parseInt(rangeMatch[2], 10);
 
@@ -1342,6 +1306,8 @@ export const streamVideo = async (req, res) => {
       "Content-Length": chunkSize,
 
       "Content-Type": contentType,
+
+      "Cache-Control": "no-cache",
     });
 
     const stream = fs.createReadStream(filePath, {
@@ -1370,5 +1336,63 @@ export const streamVideo = async (req, res) => {
     }
 
     res.end();
+  }
+};
+
+// ==========================================
+// DELETE EXPIRED VIDEOS
+// ==========================================
+//
+// Call this periodically.
+// Each video uses its own expiresAt.
+//
+// ==========================================
+
+export const deleteExpiredVideos = async () => {
+  try {
+    const now = new Date();
+
+    const expiredVideos = await Video.find({
+      expiresAt: {
+        $exists: true,
+        $ne: null,
+        $lte: now,
+      },
+    });
+
+    console.log(`Found ${expiredVideos.length} expired videos`);
+
+    for (const video of expiredVideos) {
+      try {
+        if (video.filename) {
+          const filename = path.basename(video.filename);
+
+          const filePath = path.join(VIDEO_FOLDER, filename);
+
+          if (fs.existsSync(filePath)) {
+            await fs.promises.unlink(filePath);
+
+            console.log("Deleted file:", filePath);
+          }
+        }
+
+        await Video.findByIdAndDelete(video._id);
+
+        console.log("Deleted database record:", video._id.toString());
+      } catch (error) {
+        console.error("Failed to delete expired video:", video._id, error);
+      }
+    }
+
+    return {
+      deleted: expiredVideos.length,
+    };
+  } catch (error) {
+    console.error("DELETE EXPIRED VIDEOS ERROR:", error);
+
+    return {
+      deleted: 0,
+      error: error.message,
+    };
   }
 };

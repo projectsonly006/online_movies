@@ -1,67 +1,183 @@
-import fs from "fs";
-import path from "path";
 import axios from "axios";
-import { fileURLToPath } from "url";
+import Video from "../models/Video.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/*
+|--------------------------------------------------------------------------
+| Resolve WeTransfer URL
+|--------------------------------------------------------------------------
+|
+| This attempts to follow redirects and obtain the final URL.
+|
+| IMPORTANT:
+| A WeTransfer URL may redirect to a temporary/signed URL.
+| That URL may expire later.
+|
+*/
 
-const videoFolder = path.join(__dirname, "..", "videos");
+const resolveVideoUrl = async (sourceUrl) => {
+  const response = await axios.head(sourceUrl, {
+    maxRedirects: 10,
+    timeout: 30000,
+    validateStatus: (status) => status >= 200 && status < 400,
+  });
 
-export const videoFromUrl = async (req, res) => {
+  const finalUrl = response.request?.res?.responseUrl;
+
+  if (!finalUrl) {
+    throw new Error("Could not resolve the video URL");
+  }
+
+  return finalUrl;
+};
+
+/*
+|--------------------------------------------------------------------------
+| CREATE WATCHABLE
+|--------------------------------------------------------------------------
+*/
+
+export const createWatchableFromWeTransfer = async (req, res) => {
   try {
-    const { url, title } = req.body;
+    const { title, signedFileUrl, cbc } = req.body;
 
-    if (!url) {
+    if (!title?.trim()) {
       return res.status(400).json({
-        message: "Video URL is required",
+        message: "Movie title is required",
       });
     }
 
-    // Make sure videos directory exists
-    await fs.promises.mkdir(videoFolder, {
-      recursive: true,
-    });
+    if (!signedFileUrl?.trim()) {
+      return res.status(400).json({
+        message: "WeTransfer URL is required",
+      });
+    }
 
-    const filename = `video-${Date.now()}.mkv`; // ,mp4
+    if (!cbc?.trim()) {
+      return res.status(400).json({
+        message: "CBC rating is required",
+      });
+    }
 
-    const filePath = path.join(videoFolder, filename);
+    const sourceUrl = signedFileUrl.trim();
 
-    console.log("Downloading:", url);
+    console.log("Resolving video URL:", sourceUrl);
 
-    const response = await axios({
-      method: "GET",
-      url,
-      responseType: "stream",
-      timeout: 120000,
-    });
+    const videoUrl = await resolveVideoUrl(sourceUrl);
 
-    const writer = fs.createWriteStream(filePath);
+    console.log("Resolved video URL:", videoUrl);
 
-    response.data.pipe(writer);
-
-    await new Promise((resolve, reject) => {
-      writer.on("finish", resolve);
-      writer.on("error", reject);
-    });
-
-    console.log("Saved:", filePath);
-
-    const videoUrl = `https://online-movies-uebc.onrender.com/videos/${filename}`;
-
-    // const videoUrl = `http://localhost:${process.env.PORT || 5000}/videos/${filename}`;
-
-    res.status(201).json({
-      message: "Video downloaded successfully",
-      title: title || "Untitled Video",
+    const video = await Video.create({
+      title: title.trim(),
+      sourceUrl,
       videoUrl,
+      cbc: cbc.trim(),
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Movie added successfully",
+      video,
     });
   } catch (error) {
-    console.error("URL VIDEO ERROR:", error.message);
+    console.error("CREATE WATCHABLE ERROR:", error);
 
-    res.status(500).json({
-      message: "Failed to download video",
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create watchable video",
       error: error.message,
+    });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET ALL VIDEOS
+|--------------------------------------------------------------------------
+*/
+
+export const getVideos = async (req, res) => {
+  try {
+    const videos = await Video.find({
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json({
+      success: true,
+      videos,
+    });
+  } catch (error) {
+    console.error("GET VIDEOS ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load videos",
+    });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET SINGLE VIDEO
+|--------------------------------------------------------------------------
+*/
+
+export const getVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const video = await Video.findById(id).lean();
+
+    if (!video) {
+      return res.status(404).json({
+        message: "Video not found",
+      });
+    }
+
+    if (video.expiresAt && new Date(video.expiresAt) <= new Date()) {
+      return res.status(410).json({
+        message: "Video URL has expired",
+      });
+    }
+
+    return res.json(video);
+  } catch (error) {
+    console.error("GET VIDEO ERROR:", error);
+
+    return res.status(500).json({
+      message: "Failed to load video",
+    });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| DELETE VIDEO
+|--------------------------------------------------------------------------
+*/
+
+export const deleteVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const video = await Video.findByIdAndDelete(id);
+
+    if (!video) {
+      return res.status(404).json({
+        message: "Video not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Video deleted successfully",
+    });
+  } catch (error) {
+    console.error("DELETE VIDEO ERROR:", error);
+
+    return res.status(500).json({
+      message: "Failed to delete video",
     });
   }
 };
