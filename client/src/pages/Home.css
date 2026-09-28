@@ -105,6 +105,13 @@
   font-size: 15px;
 }
 
+.home-brand {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+}
+
 /* ==========================================
    MAIN CARD
 ========================================== */
