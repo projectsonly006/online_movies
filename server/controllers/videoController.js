@@ -1064,7 +1064,7 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 
     // ==========================================
     // IMPORTANT:
-    // URL USES MONGODB VIDEO ID
+    // URL USES MONGODB VIDEO Id
     // ==========================================
 
     newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
