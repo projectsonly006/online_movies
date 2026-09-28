@@ -865,6 +865,123 @@ body {
 }
 
 /* ==========================================
+   MOVIE SLOTS
+========================================== */
+
+.movie-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.movie-slot {
+  padding: 22px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #fafafa;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.movie-slot:hover {
+  border-color: #d1d5db;
+}
+
+.movie-slot-active {
+  border-color: #2563eb;
+  background: #f8fbff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+/* ==========================================
+   MOVIE SLOT HEADER
+========================================== */
+
+.movie-slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.movie-slot-number {
+  display: inline-block;
+  margin-bottom: 5px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.movie-slot-header h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.movie-slot-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ==========================================
+   REQUIRED STAR
+========================================== */
+
+.required-star {
+  margin-left: 4px;
+  color: #dc2626;
+  font-weight: 700;
+}
+
+/* ==========================================
+   FORM GROUP INSIDE MOVIE SLOT
+========================================== */
+
+.movie-slot .form-group {
+  margin-bottom: 18px;
+}
+
+.movie-slot .form-group:last-child {
+  margin-bottom: 0;
+}
+
+/* ==========================================
+   RESPONSIVE
+========================================== */
+
+@media (max-width: 768px) {
+  .movie-slot {
+    padding: 18px;
+    border-radius: 14px;
+  }
+
+  .movie-slot-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .movie-slot-status {
+    align-self: flex-start;
+  }
+}
+
+/* ==========================================
    RESPONSIVE
 ========================================== */
 

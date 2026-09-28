@@ -3,17 +3,31 @@ import { useNavigate } from "react-router-dom";
 import "./Admin.css";
 import { api } from "../api";
 
+const createEmptyMovie = () => ({
+  title: "",
+  url: "",
+  cbc: "",
+});
+
 function Admin() {
   const navigate = useNavigate();
 
   const pollingRef = useRef(null);
 
-  const [title, setTitle] = useState("");
-  const [url, setUrl] = useState("");
-  const [cbc, setCbc] = useState("");
+  const [movies, setMovies] = useState([
+    createEmptyMovie(),
+    createEmptyMovie(),
+    createEmptyMovie(),
+    createEmptyMovie(),
+    createEmptyMovie(),
+  ]);
+
+  const [currentMovieIndex, setCurrentMovieIndex] = useState(0);
 
   const [loading, setLoading] = useState(false);
+
   const [error, setError] = useState("");
+
   const [success, setSuccess] = useState("");
 
   const [progress, setProgress] = useState(null);
@@ -26,7 +40,9 @@ function Admin() {
     const token = localStorage.getItem("adminToken");
 
     if (!token) {
-      navigate("/admin/login", { replace: true });
+      navigate("/admin/login", {
+        replace: true,
+      });
     }
   }, [navigate]);
 
@@ -37,6 +53,7 @@ function Admin() {
   const stopPolling = () => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
+
       pollingRef.current = null;
     }
   };
@@ -49,178 +66,392 @@ function Admin() {
     stopPolling();
 
     localStorage.removeItem("adminToken");
+
     localStorage.removeItem("adminUser");
 
-    navigate("/admin/login", { replace: true });
+    navigate("/admin/login", {
+      replace: true,
+    });
   };
 
   // ==========================================
-  // POLL DOWNLOAD PROGRESS
+  // UPDATE MOVIE FIELD
   // ==========================================
 
-  const startProgressPolling = (jobId) => {
-    stopPolling();
+  const updateMovie = (index, field, value) => {
+    setMovies((previousMovies) =>
+      previousMovies.map((movie, movieIndex) =>
+        movieIndex === index
+          ? {
+              ...movie,
+              [field]: value,
+            }
+          : movie,
+      ),
+    );
+  };
 
-    const checkProgress = async () => {
-      try {
-        const token = localStorage.getItem("adminToken");
+  // ==========================================
+  // RESET FORM
+  // ==========================================
 
-        if (!token) {
-          stopPolling();
+  const resetForm = () => {
+    setMovies([
+      createEmptyMovie(),
+      createEmptyMovie(),
+      createEmptyMovie(),
+      createEmptyMovie(),
+      createEmptyMovie(),
+    ]);
 
-          navigate("/admin/login", {
-            replace: true,
-          });
+    setCurrentMovieIndex(0);
 
-          return;
-        }
+    setProgress(null);
+  };
 
-        const response = await fetch(
-          api(`/api/videos/download-progress/${jobId}`),
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
+  // ==========================================
+  // CREATE JOB ID
+  // ==========================================
+
+  const createJobId = () => {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+
+    return `job-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+  };
+
+  // ==========================================
+  // DOWNLOAD ONE MOVIE
+  // ==========================================
+
+  const downloadMovie = async (movie, index, token) => {
+    const jobId = createJobId();
+
+    setCurrentMovieIndex(index);
+
+    setProgress({
+      status: "starting",
+
+      percentage: 0,
+
+      downloadedBytes: 0,
+
+      totalBytes: 0,
+
+      downloadedMB: 0,
+
+      totalMB: 0,
+
+      speedMBps: 0,
+
+      filename: "",
+    });
+
+    const response = await fetch(api("/api/videos/create-watchable"), {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+
+        Authorization: `Bearer ${token}`,
+      },
+
+      body: JSON.stringify({
+        signedFileUrl: movie.url.trim(),
+
+        sourceUrl: movie.url.trim(),
+
+        title: movie.title.trim(),
+
+        cbc: movie.cbc.trim(),
+
+        jobId,
+      }),
+    });
+
+    const data = await response.json();
+
+    console.log(`CREATE MOVIE ${index + 1} RESPONSE:`, data);
+
+    if (response.status === 401 || response.status === 403) {
+      localStorage.removeItem("adminToken");
+
+      localStorage.removeItem("adminUser");
+
+      navigate("/admin/login", {
+        replace: true,
+      });
+
+      throw new Error("Admin session expired");
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || `Failed to add movie ${index + 1}`);
+    }
+
+    return new Promise((resolve, reject) => {
+      let finished = false;
+
+      const checkProgress = async () => {
+        try {
+          const progressResponse = await fetch(
+            api(`/api/videos/download-progress/${data.jobId || jobId}`),
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
             },
-          },
-        );
+          );
 
-        const data = await response.json();
+          const progressData = await progressResponse.json();
 
-        if (response.status === 401 || response.status === 403) {
-          stopPolling();
+          if (
+            progressResponse.status === 401 ||
+            progressResponse.status === 403
+          ) {
+            stopPolling();
 
-          localStorage.removeItem("adminToken");
-          localStorage.removeItem("adminUser");
+            localStorage.removeItem("adminToken");
 
-          navigate("/admin/login", {
-            replace: true,
-          });
+            localStorage.removeItem("adminUser");
 
-          return;
+            navigate("/admin/login", {
+              replace: true,
+            });
+
+            if (!finished) {
+              finished = true;
+
+              reject(new Error("Admin session expired"));
+            }
+
+            return;
+          }
+
+          if (!progressResponse.ok) {
+            return;
+          }
+
+          setProgress(progressData);
+
+          // ======================================
+          // MOVIE COMPLETED
+          // ======================================
+
+          if (progressData.status === "completed" && progressData.videoId) {
+            stopPolling();
+
+            if (!finished) {
+              finished = true;
+
+              resolve(progressData);
+            }
+
+            return;
+          }
+
+          // ======================================
+          // MOVIE FAILED
+          // ======================================
+
+          if (progressData.status === "error") {
+            stopPolling();
+
+            if (!finished) {
+              finished = true;
+
+              reject(
+                new Error(
+                  progressData.error || `Movie ${index + 1} download failed`,
+                ),
+              );
+            }
+          }
+        } catch (error) {
+          console.error("PROGRESS ERROR:", error);
         }
+      };
 
-        if (!response.ok) {
-          return;
-        }
+      checkProgress();
 
-        setProgress(data);
-
-        if (data.status === "completed" && data.videoId) {
-          stopPolling();
-
-          setLoading(false);
-
-          setSuccess("Movie added successfully!");
-
-          setTitle("");
-          setUrl("");
-          setCbc("");
-
-          setProgress({
-            ...data,
-            percentage: 100,
-          });
-
-          return;
-        }
-
-        if (data.status === "error") {
-          stopPolling();
-
-          setLoading(false);
-
-          setError(data.error || "Download failed");
-        }
-      } catch (error) {
-        console.error("PROGRESS ERROR:", error);
-      }
-    };
-
-    checkProgress();
-
-    pollingRef.current = setInterval(checkProgress, 1000);
+      pollingRef.current = setInterval(checkProgress, 1000);
+    });
   };
 
   // ==========================================
-  // SUBMIT
+  // SUBMIT ALL MOVIES
   // ==========================================
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     setError("");
+
     setSuccess("");
+
     setProgress(null);
 
     const token = localStorage.getItem("adminToken");
 
     if (!token) {
-      navigate("/admin/login", { replace: true });
+      navigate("/admin/login", {
+        replace: true,
+      });
+
       return;
     }
 
-    if (!title.trim()) {
-      setError("Please enter the movie title.");
+    // ==========================================
+    // MOVIE 1 IS REQUIRED
+    // ==========================================
+
+    const firstMovie = movies[0];
+
+    if (!firstMovie.title.trim()) {
+      setError("Movie 1 title is required.");
+
       return;
     }
 
-    if (!url.trim()) {
-      setError("Please enter the video URL.");
+    if (!firstMovie.url.trim()) {
+      setError("Movie 1 video URL is required.");
+
       return;
     }
 
-    if (!cbc.trim()) {
-      setError("Please select the CBC rating.");
+    if (!firstMovie.cbc.trim()) {
+      setError("Movie 1 CBC rating is required.");
+
+      return;
+    }
+
+    // ==========================================
+    // FIND MOVIES THAT WERE ACTUALLY FILLED
+    // ==========================================
+
+    const moviesToAdd = [];
+
+    for (let index = 0; index < movies.length; index++) {
+      const movie = movies[index];
+
+      const hasTitle = movie.title.trim() !== "";
+
+      const hasUrl = movie.url.trim() !== "";
+
+      const hasCbc = movie.cbc.trim() !== "";
+
+      const hasAnything = hasTitle || hasUrl || hasCbc;
+
+      // Empty optional slot
+      if (!hasAnything) {
+        continue;
+      }
+
+      // ========================================
+      // OPTIONAL MOVIE VALIDATION
+      // ========================================
+
+      if (index > 0) {
+        if (!hasTitle) {
+          setError(`Movie ${index + 1}: please enter a title.`);
+
+          return;
+        }
+
+        if (!hasUrl) {
+          setError(`Movie ${index + 1}: please enter a video URL.`);
+
+          return;
+        }
+
+        if (!hasCbc) {
+          setError(`Movie ${index + 1}: please select a CBC rating.`);
+
+          return;
+        }
+      }
+
+      moviesToAdd.push({
+        ...movie,
+        index,
+      });
+    }
+
+    // ==========================================
+    // SAFETY CHECK
+    // ==========================================
+
+    if (moviesToAdd.length === 0) {
+      setError("Please add at least one movie.");
+
       return;
     }
 
     setLoading(true);
 
-    const jobId = crypto.randomUUID();
-
     try {
-      const response = await fetch(api("/api/videos/create-watchable"), {
-        method: "POST",
+      // ========================================
+      // ADD MOVIES ONE BY ONE
+      // ========================================
 
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+      for (
+        let moviePosition = 0;
+        moviePosition < moviesToAdd.length;
+        moviePosition++
+      ) {
+        const movie = moviesToAdd[moviePosition];
 
-        body: JSON.stringify({
-          signedFileUrl: url.trim(),
-          title: title.trim(),
-          cbc: cbc.trim(),
-          jobId,
-        }),
-      });
+        console.log(
+          `ADDING MOVIE ${moviePosition + 1} OF ${moviesToAdd.length}`,
+        );
 
-      const data = await response.json();
+        setCurrentMovieIndex(movie.index);
 
-      console.log("CREATE VIDEO RESPONSE:", data);
+        setProgress({
+          status: "starting",
 
-      if (response.status === 401 || response.status === 403) {
-        localStorage.removeItem("adminToken");
-        localStorage.removeItem("adminUser");
+          percentage: 0,
 
-        navigate("/admin/login", {
-          replace: true,
+          downloadedBytes: 0,
+
+          totalBytes: 0,
+
+          downloadedMB: 0,
+
+          totalMB: 0,
+
+          speedMBps: 0,
+
+          filename: "",
+
+          movieNumber: moviePosition + 1,
+
+          totalMovies: moviesToAdd.length,
         });
 
-        return;
+        await downloadMovie(movie, movie.index, token);
       }
 
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to create video");
-      }
-
-      startProgressPolling(data.jobId || jobId);
-    } catch (error) {
-      console.error("CREATE VIDEO ERROR:", error);
+      // ========================================
+      // ALL MOVIES COMPLETE
+      // ========================================
 
       setLoading(false);
 
-      setError(error.message || "Failed to create video");
+      setSuccess(
+        `${moviesToAdd.length} ${
+          moviesToAdd.length === 1 ? "movie" : "movies"
+        } added successfully!`,
+      );
+
+      resetForm();
+    } catch (error) {
+      console.error("CREATE MOVIES ERROR:", error);
+
+      setLoading(false);
+
+      setError(error.message || "Failed to add movies.");
     }
   };
 
@@ -250,7 +481,7 @@ function Admin() {
   const speed = progress?.speedMBps ?? 0;
 
   // ==========================================
-  // USER
+  // ADMIN USER
   // ==========================================
 
   let adminUser = null;
@@ -268,7 +499,9 @@ function Admin() {
   return (
     <main className="admin-page">
       <div className="admin-container">
-        {/* HEADER */}
+        {/* ======================================
+            HEADER
+        ====================================== */}
 
         <header className="admin-header">
           <div className="admin-brand">
@@ -288,85 +521,153 @@ function Admin() {
               <strong>{adminUser?.username || "Admin"}</strong>
             </div>
 
-            <button className="logout-button" onClick={handleLogout}>
+            <button
+              className="logout-button"
+              onClick={handleLogout}
+              type="button"
+            >
               Logout
             </button>
           </div>
         </header>
 
-        {/* CREATE MOVIE */}
+        {/* ======================================
+            CREATE MOVIES
+        ====================================== */}
 
         <section className="admin-card">
           <div className="admin-card-header">
             <div>
               <span className="section-label">ADMIN</span>
 
-              <h2>Add Movie</h2>
+              <h2>Add Movies</h2>
 
-              <p>Add a movie to your video library.</p>
+              <p>Add up to 5 movies to your movie library.</p>
             </div>
           </div>
 
           <form className="admin-form" onSubmit={handleSubmit}>
-            {/* TITLE */}
+            {/* ==================================
+                MOVIE SLOTS
+            ================================== */}
 
-            <div className="form-group">
-              <label htmlFor="movie-title">Movie Title</label>
+            <div className="movie-slots">
+              {movies.map((movie, index) => {
+                const isRequired = index === 0;
 
-              <input
-                id="movie-title"
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Enter movie title"
-                disabled={loading}
-              />
+                const isActive = currentMovieIndex === index && loading;
+
+                return (
+                  <div
+                    className={`movie-slot ${
+                      isActive ? "movie-slot-active" : ""
+                    }`}
+                    key={index}
+                  >
+                    {/* SLOT HEADER */}
+
+                    <div className="movie-slot-header">
+                      <div>
+                        <span className="movie-slot-number">
+                          Movie {index + 1}
+                        </span>
+
+                        <h3>
+                          {isRequired ? "Required Movie" : "Optional Movie"}
+                        </h3>
+                      </div>
+
+                      {isActive && (
+                        <span className="movie-slot-status">Adding...</span>
+                      )}
+                    </div>
+
+                    {/* TITLE */}
+
+                    <div className="form-group">
+                      <label htmlFor={`movie-title-${index}`}>
+                        Movie Title
+                        {isRequired && <span className="required-star">*</span>}
+                      </label>
+
+                      <input
+                        id={`movie-title-${index}`}
+                        type="text"
+                        value={movie.title}
+                        onChange={(e) =>
+                          updateMovie(index, "title", e.target.value)
+                        }
+                        placeholder={
+                          isRequired
+                            ? "Enter movie title"
+                            : "Optional movie title"
+                        }
+                        disabled={loading}
+                        required={isRequired}
+                      />
+                    </div>
+
+                    {/* URL */}
+
+                    <div className="form-group">
+                      <label htmlFor={`movie-url-${index}`}>
+                        Video URL
+                        {isRequired && <span className="required-star">*</span>}
+                      </label>
+
+                      <input
+                        id={`movie-url-${index}`}
+                        type="url"
+                        value={movie.url}
+                        onChange={(e) =>
+                          updateMovie(index, "url", e.target.value)
+                        }
+                        placeholder="Paste the direct signed video URL"
+                        disabled={loading}
+                        required={isRequired}
+                      />
+
+                      <span className="input-help">
+                        Use the direct signed video download URL.
+                      </span>
+                    </div>
+
+                    {/* CBC */}
+
+                    <div className="form-group">
+                      <label htmlFor={`movie-cbc-${index}`}>
+                        CBC Rating
+                        {isRequired && <span className="required-star">*</span>}
+                      </label>
+
+                      <select
+                        id={`movie-cbc-${index}`}
+                        value={movie.cbc}
+                        onChange={(e) =>
+                          updateMovie(index, "cbc", e.target.value)
+                        }
+                        disabled={loading}
+                        required={isRequired}
+                      >
+                        <option value="">Select rating</option>
+
+                        <option value="U">U</option>
+
+                        <option value="U/A">U/A</option>
+
+                        <option value="A">A</option>
+
+                        <option value="R">R</option>
+                      </select>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
-            {/* URL */}
-
-            <div className="form-group">
-              <label htmlFor="movie-url">Video URL</label>
-
-              <input
-                id="movie-url"
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="Paste the authorized video download URL"
-                disabled={loading}
-                required
-              />
-
-              <span className="input-help">
-                Use the direct signed video download URL.
-              </span>
-            </div>
-
-            {/* CBC */}
-
-            <div className="form-group">
-              <label htmlFor="movie-cbc">CBC Rating</label>
-
-              <select
-                id="movie-cbc"
-                value={cbc}
-                onChange={(e) => setCbc(e.target.value)}
-                disabled={loading}
-              >
-                <option value="">Select rating</option>
-
-                <option value="U">U</option>
-
-                <option value="U/A">U/A</option>
-
-                <option value="A">A</option>
-
-                <option value="R">R</option>
-              </select>
-            </div>
-
-            {/* BUTTON */}
+            {/* ==================================
+                BUTTON
+            ================================== */}
 
             <button
               className="add-movie-button"
@@ -376,24 +677,26 @@ function Admin() {
               {loading ? (
                 <>
                   <span className="button-spinner"></span>
-                  Adding Movie...
+                  Adding Movies...
                 </>
               ) : (
                 <>
                   <span>＋</span>
-                  Add Movie
+                  Add Movies
                 </>
               )}
             </button>
           </form>
 
-          {/* PROGRESS */}
+          {/* ======================================
+              PROGRESS
+          ====================================== */}
 
           {loading && progress && (
             <div className="admin-progress">
               <div className="progress-header">
                 <div>
-                  <h3>Adding movie</h3>
+                  <h3>Adding Movie {currentMovieIndex + 1}</h3>
 
                   <span>
                     {progress.status === "starting"
@@ -434,18 +737,28 @@ function Admin() {
             </div>
           )}
 
-          {/* ERROR */}
+          {/* ======================================
+              ERROR
+          ====================================== */}
 
           {error && <div className="admin-message error">{error}</div>}
 
-          {/* SUCCESS */}
+          {/* ======================================
+              SUCCESS
+          ====================================== */}
 
           {success && <div className="admin-message success">{success}</div>}
         </section>
 
-        {/* BACK TO HOME */}
+        {/* ======================================
+            BACK HOME
+        ====================================== */}
 
-        <button className="back-home-button" onClick={() => navigate("/")}>
+        <button
+          className="back-home-button"
+          onClick={() => navigate("/")}
+          type="button"
+        >
           ← Movie Library
         </button>
       </div>
