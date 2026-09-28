@@ -118,14 +118,12 @@ export const uploadVideo = async (req, res) => {
     // CREATE DATABASE RECORD
     // ==========================================
 
-    const newVideo = await Video.create({
-      title: getTitleFromFilename(safeFilename),
+    const newVideo = new Video({
+      title: title || getTitleFromFilename(safeFilename),
 
-      publicId: `upload-${Date.now()}`,
+      publicId: `wetransfer-${Date.now()}`,
 
-      videoUrl: "",
-
-      sourceUrl: "",
+      sourceUrl,
 
       filename: safeFilename,
 
@@ -135,10 +133,14 @@ export const uploadVideo = async (req, res) => {
 
       format: extension,
 
-      size: stats.size,
+      size: downloaded.size,
 
-      cbc: "",
+      cbc: cbc.trim(),
     });
+
+    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
+
+    await newVideo.save();
 
     // URL uses MongoDB ID
     newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
@@ -215,27 +217,29 @@ export const createVideoFromUrl = async (req, res) => {
       );
     }
 
-    const newVideo = await Video.create({
+    const newVideo = new Video({
       title: title || getTitleFromFilename(safeFilename),
 
-      publicId: `external-${Date.now()}`,
-
-      videoUrl,
+      publicId: `wetransfer-${Date.now()}`,
 
       sourceUrl,
 
       filename: safeFilename,
 
-      thumbnailUrl,
+      thumbnailUrl: "",
 
-      duration: Number(duration) || 0,
+      duration,
 
-      format: format || getExtension(safeFilename),
+      format: extension,
 
-      size: Number(size) || 0,
+      size: downloaded.size,
 
-      cbc: String(cbc || "").trim(),
+      cbc: cbc.trim(),
     });
+
+    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
+
+    await newVideo.save();
 
     console.log("VIDEO CREATED:", newVideo._id);
 
@@ -307,14 +311,12 @@ export const createLocalVideo = async (req, res) => {
     // CREATE DATABASE RECORD
     // ==========================================
 
-    const newVideo = await Video.create({
+    const newVideo = new Video({
       title: title || getTitleFromFilename(safeFilename),
 
-      publicId: `local-${Date.now()}`,
+      publicId: `wetransfer-${Date.now()}`,
 
-      videoUrl: "",
-
-      sourceUrl: "",
+      sourceUrl,
 
       filename: safeFilename,
 
@@ -324,10 +326,14 @@ export const createLocalVideo = async (req, res) => {
 
       format: extension,
 
-      size: stats.size,
+      size: downloaded.size,
 
-      cbc: String(cbc || "").trim(),
+      cbc: cbc.trim(),
     });
+
+    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
+
+    await newVideo.save();
 
     newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
 
@@ -789,12 +795,10 @@ export const testDownloadVideo = async (req, res) => {
     // DATABASE
     // ==========================================
 
-    const newVideo = await Video.create({
+    const newVideo = new Video({
       title: title || getTitleFromFilename(safeFilename),
 
       publicId: `wetransfer-${Date.now()}`,
-
-      videoUrl: "",
 
       sourceUrl,
 
@@ -806,10 +810,14 @@ export const testDownloadVideo = async (req, res) => {
 
       format: extension,
 
-      size: result.size,
+      size: downloaded.size,
 
-      cbc: String(cbc || "").trim(),
+      cbc: cbc.trim(),
     });
+
+    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
+
+    await newVideo.save();
 
     newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
 
@@ -1030,12 +1038,10 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 
     const extension = getExtension(safeFilename);
 
-    const newVideo = await Video.create({
+    const newVideo = new Video({
       title: title || getTitleFromFilename(safeFilename),
 
       publicId: `wetransfer-${Date.now()}`,
-
-      videoUrl: "",
 
       sourceUrl,
 
@@ -1049,8 +1055,12 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 
       size: downloaded.size,
 
-      cbc: String(cbc || "").trim(),
+      cbc: cbc.trim(),
     });
+
+    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
+
+    await newVideo.save();
 
     // ==========================================
     // IMPORTANT:
