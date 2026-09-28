@@ -36,6 +36,12 @@ function Admin() {
 
   const [progress, setProgress] = useState(null);
 
+  const [existingMovies, setExistingMovies] = useState([]);
+
+  const [loadingMovies, setLoadingMovies] = useState(false);
+
+  const [deletingMovieId, setDeletingMovieId] = useState(null);
+
   // ==========================================
   // CHECK ADMIN LOGIN
   // ==========================================
@@ -47,8 +53,92 @@ function Admin() {
       navigate("/admin/login", {
         replace: true,
       });
+
+      return;
     }
+
+    loadExistingMovies();
   }, [navigate]);
+
+  // ==========================================
+  // DELETE MOVIE
+  // ==========================================
+
+  const handleDeleteMovie = async (movie) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${movie.title}"?\n\nThis will delete the movie from MongoDB and remove the video file from the server.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const token = localStorage.getItem("adminToken");
+
+    if (!token) {
+      navigate("/admin/login", {
+        replace: true,
+      });
+
+      return;
+    }
+
+    try {
+      setDeletingMovieId(movie._id);
+
+      setError("");
+
+      setSuccess("");
+
+      const response = await fetch(api(`/api/videos/${movie._id}`), {
+        method: "DELETE",
+
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      // ==========================================
+      // AUTH ERROR
+      // ==========================================
+
+      if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem("adminToken");
+
+        localStorage.removeItem("adminUser");
+
+        navigate("/admin/login", {
+          replace: true,
+        });
+
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to delete movie");
+      }
+
+      // ==========================================
+      // REMOVE FROM ADMIN LIST
+      // ==========================================
+
+      setExistingMovies((previousMovies) =>
+        previousMovies.filter(
+          (existingMovie) => existingMovie._id !== movie._id,
+        ),
+      );
+
+      setSuccess(`"${movie.title}" deleted successfully.`);
+    } catch (error) {
+      console.error("DELETE MOVIE ERROR:", error);
+
+      setError(error.message || "Failed to delete movie.");
+    } finally {
+      setDeletingMovieId(null);
+    }
+  };
 
   // ==========================================
   // STOP POLLING
@@ -79,6 +169,32 @@ function Admin() {
   };
 
   // ==========================================
+  // LOAD EXISTING MOVIES
+  // ==========================================
+
+  const loadExistingMovies = async () => {
+    try {
+      setLoadingMovies(true);
+
+      const response = await fetch(api("/api/videos"));
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to load movies");
+      }
+
+      setExistingMovies(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("LOAD MOVIES ERROR:", error);
+
+      setError(error.message || "Failed to load existing movies.");
+    } finally {
+      setLoadingMovies(false);
+    }
+  };
+
+  // ==========================================
   // CREATE MOVIE SLOTS
   // ==========================================
 
@@ -101,7 +217,7 @@ function Admin() {
     }
 
     // Change this if you want a different maximum.
-    if (count > 50) {
+    if (count > 500) {
       setError("You can add a maximum of 50 movies at once.");
       return;
     }
@@ -893,6 +1009,70 @@ function Admin() {
           ====================================== */}
 
           {success && <div className="admin-message success">{success}</div>}
+        </section>
+
+        {/* ======================================
+    EXISTING MOVIES
+====================================== */}
+
+        <section className="admin-card">
+          <div className="admin-card-header">
+            <div>
+              <span className="section-label">LIBRARY</span>
+
+              <h2>Existing Movies</h2>
+
+              <p>Movies currently available to users.</p>
+            </div>
+          </div>
+
+          {loadingMovies ? (
+            <div className="admin-message">Loading movies...</div>
+          ) : existingMovies.length === 0 ? (
+            <div className="admin-message">No movies have been added yet.</div>
+          ) : (
+            <div className="existing-movies-list">
+              {existingMovies.map((movie) => {
+                const isDeleting = deletingMovieId === movie._id;
+
+                return (
+                  <div className="existing-movie-item" key={movie._id}>
+                    <div className="existing-movie-info">
+                      <h3>{movie.title}</h3>
+
+                      <div className="existing-movie-details">
+                        <span>Rating: {movie.cbc || "Not set"}</span>
+
+                        <span>Format: {movie.format || "mp4"}</span>
+
+                        {movie.duration > 0 && (
+                          <span>
+                            Duration: {Math.round(movie.duration)} sec
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="delete-movie-button"
+                      onClick={() => handleDeleteMovie(movie)}
+                      disabled={isDeleting || loading}
+                    >
+                      {isDeleting ? (
+                        <>
+                          <span className="button-spinner"></span>
+                          Deleting...
+                        </>
+                      ) : (
+                        "Delete"
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         {/* ======================================

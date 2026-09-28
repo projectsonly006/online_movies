@@ -960,6 +960,71 @@ body {
   margin-bottom: 0;
 }
 
+.existing-movies-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.existing-movie-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.existing-movie-info {
+  min-width: 0;
+}
+
+.existing-movie-info h3 {
+  margin: 0 0 8px;
+  color: #fff;
+}
+
+.existing-movie-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: #999;
+  font-size: 14px;
+}
+
+.delete-movie-button {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  background: #dc2626;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.delete-movie-button:hover {
+  background: #b91c1c;
+}
+
+.delete-movie-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+  .existing-movie-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .delete-movie-button {
+    width: 100%;
+  }
+}
+
 /* ==========================================
    RESPONSIVE
 ========================================== */

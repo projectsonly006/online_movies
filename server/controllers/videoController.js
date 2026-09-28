@@ -441,6 +441,80 @@ export const updateVideo = async (req, res) => {
 };
 
 // ==========================================
+// DELETE VIDEO
+// ==========================================
+
+export const deleteVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check MongoDB ID
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: "Invalid video ID",
+      });
+    }
+
+    // Find video first
+    const video = await Video.findById(id);
+
+    if (!video) {
+      return res.status(404).json({
+        message: "Video not found",
+      });
+    }
+
+    // ==========================================
+    // DELETE VIDEO FILE FROM /videos
+    // ==========================================
+
+    if (video.filename) {
+      const safeFilename = path.basename(video.filename);
+
+      const filePath = path.join(VIDEO_FOLDER, safeFilename);
+
+      try {
+        if (fs.existsSync(filePath)) {
+          await fs.promises.unlink(filePath);
+
+          console.log("VIDEO FILE DELETED:", filePath);
+        } else {
+          console.log("VIDEO FILE NOT FOUND:", filePath);
+        }
+      } catch (fileError) {
+        console.error("VIDEO FILE DELETE ERROR:", fileError.message);
+
+        // Continue deleting MongoDB record
+      }
+    }
+
+    // ==========================================
+    // DELETE FROM MONGODB
+    // ==========================================
+
+    await Video.findByIdAndDelete(id);
+
+    console.log("=================================");
+    console.log("VIDEO DELETED");
+    console.log("VIDEO ID:", id);
+    console.log("TITLE:", video.title);
+    console.log("=================================");
+
+    return res.json({
+      success: true,
+      message: "Video deleted successfully",
+      videoId: id,
+    });
+  } catch (error) {
+    console.error("DELETE VIDEO ERROR:", error);
+
+    return res.status(500).json({
+      message: error.message || "Failed to delete video",
+    });
+  }
+};
+
+// ==========================================
 // DOWNLOAD FILE
 // ==========================================
 

@@ -11,6 +11,7 @@ import {
   createWatchableFromWeTransfer,
   getDownloadProgress,
   streamVideo,
+  deleteVideo,
 } from "../controllers/videoController.js";
 
 import { adminAuth } from "../middleware/adminAuth.js";
@@ -38,6 +39,9 @@ router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
 
 // Update video
 router.put("/:id", adminAuth, updateVideo);
+
+// Delete video
+router.delete("/:id", adminAuth, deleteVideo);
 
 // ==========================================
 // PUBLIC - DOWNLOAD PROGRESS
