@@ -218,7 +218,7 @@ function Admin() {
 
     // Change this if you want a different maximum.
     if (count > 500) {
-      setError("You can add a maximum of 50 movies at once.");
+      setError("You can add a maximum of 500 movies at once.");
       return;
     }
 
@@ -746,14 +746,14 @@ function Admin() {
                   id="movie-count"
                   type="number"
                   min="1"
-                  max="50"
+                  max="500"
                   value={movieCount}
                   onChange={(e) => setMovieCount(e.target.value)}
                   placeholder="Example: 5"
                 />
 
                 <span className="input-help">
-                  Enter any number from 1 to 50.
+                  Enter any number from 1 to 500.
                 </span>
               </div>
 
