@@ -16,7 +16,7 @@ import { setProgress, getProgress } from "../utils/downloadProgress.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const VIDEO_FOLDER = path.join(__dirname, "..", "videos");
+const VIDEO_FOLDER = process.env.VIDEO_FOLDER || "/var/data/videos";
 
 const SERVER_URL =
   process.env.SERVER_URL || "https://online-movies-uebc.onrender.com";
@@ -38,8 +38,25 @@ function getSafeFilename(filename, fallback = "download.mp4") {
   return safeFilename;
 }
 
+// ==========================================
+// CREATE UNIQUE VIDEO FILENAME
+// ==========================================
+
+function createVideoFilename(originalFilename) {
+  const extension = path.extname(originalFilename || ".mp4") || ".mp4";
+
+  const baseName = path.basename(originalFilename || "video", extension);
+
+  const safeBaseName = baseName
+    .replace(/[^a-zA-Z0-9-_]/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 80);
+
+  return `${safeBaseName}-${Date.now()}-${uuidv4().slice(0, 8)}${extension}`;
+}
+
 function getVideoUrl(filename) {
-  return `${SERVER_URL}/videos/${encodeURIComponent(filename)}`;
+  return `${SERVER_URL}/api/videos/stream/${encodeURIComponent(filename)}`;
 }
 
 function getExtension(filename) {
@@ -70,10 +87,7 @@ export const uploadVideo = async (req, res) => {
       recursive: true,
     });
 
-    const safeFilename = getSafeFilename(
-      req.file.originalname,
-      `video-${Date.now()}.mp4`,
-    );
+    const safeFilename = createVideoFilename(req.file.originalname);
 
     const outputPath = path.join(VIDEO_FOLDER, safeFilename);
 
