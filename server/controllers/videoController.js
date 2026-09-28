@@ -119,12 +119,9 @@ export const uploadVideo = async (req, res) => {
     // ==========================================
 
     const newVideo = await Video.create({
-      title:
-        req.body.title ||
-        getTitleFromFilename(safeFilename) ||
-        "Untitled Video",
+      title: getTitleFromFilename(safeFilename),
 
-      publicId: `local-upload-${Date.now()}`,
+      publicId: `upload-${Date.now()}`,
 
       videoUrl: "",
 
@@ -140,7 +137,7 @@ export const uploadVideo = async (req, res) => {
 
       size: stats.size,
 
-      cbc: (req.body.cbc || "").trim(),
+      cbc: "",
     });
 
     // URL uses MongoDB ID

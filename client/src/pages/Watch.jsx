@@ -511,7 +511,7 @@ function Watch() {
               ref={videoRef}
               className="video-player"
               preload="metadata"
-              src={`${API_URL}/videos/${video.id}/stream`}
+              src={api(`/api/videos/stream/${video.id}`)}
               controls={false}
               controlsList="nodownload"
               disablePictureInPicture
