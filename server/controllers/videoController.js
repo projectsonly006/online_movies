@@ -1,7 +1,6 @@
 import fs from "fs";
 import path from "path";
 import mongoose from "mongoose";
-import { fileURLToPath } from "url";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 
@@ -10,11 +9,8 @@ import { getVideoDuration } from "../utils/videoMetadata.js";
 import { setProgress, getProgress } from "../utils/downloadProgress.js";
 
 // ==========================================
-// PATH SETUP
+// PATH / SERVER SETUP
 // ==========================================
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const VIDEO_FOLDER = process.env.VIDEO_FOLDER || "/var/data/videos";
 
@@ -55,9 +51,18 @@ function createVideoFilename(originalFilename) {
   return `${safeBaseName}-${Date.now()}-${uuidv4().slice(0, 8)}${extension}`;
 }
 
-function getVideoUrl(filename) {
-  return `${SERVER_URL}/api/videos/stream/${encodeURIComponent(filename)}`;
+// ==========================================
+// VIDEO URL
+// Uses MongoDB video ID
+// ==========================================
+
+function getVideoUrl(videoId) {
+  return `${SERVER_URL}/api/videos/stream/${videoId}`;
 }
+
+// ==========================================
+// FILE HELPERS
+// ==========================================
 
 function getExtension(filename) {
   return path.extname(filename).replace(".", "").toLowerCase() || "mp4";
@@ -72,7 +77,7 @@ function createJobId() {
 }
 
 // ==========================================
-// UPLOAD VIDEO FILE TO LOCAL /videos FOLDER
+// UPLOAD VIDEO FILE
 // ==========================================
 
 export const uploadVideo = async (req, res) => {
@@ -91,7 +96,7 @@ export const uploadVideo = async (req, res) => {
 
     const outputPath = path.join(VIDEO_FOLDER, safeFilename);
 
-    // Save uploaded buffer to /videos
+    // Save uploaded file
     await fs.promises.writeFile(outputPath, req.file.buffer);
 
     const stats = await fs.promises.stat(outputPath);
@@ -109,7 +114,9 @@ export const uploadVideo = async (req, res) => {
 
     const extension = getExtension(safeFilename);
 
-    const videoUrl = getVideoUrl(safeFilename);
+    // ==========================================
+    // CREATE DATABASE RECORD
+    // ==========================================
 
     const newVideo = await Video.create({
       title:
@@ -119,7 +126,9 @@ export const uploadVideo = async (req, res) => {
 
       publicId: `local-upload-${Date.now()}`,
 
-      videoUrl,
+      videoUrl: "",
+
+      sourceUrl: "",
 
       filename: safeFilename,
 
@@ -134,6 +143,11 @@ export const uploadVideo = async (req, res) => {
       cbc: (req.body.cbc || "").trim(),
     });
 
+    // URL uses MongoDB ID
+    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
+
+    await newVideo.save();
+
     console.log("=================================");
     console.log("LOCAL VIDEO UPLOADED");
     console.log("=================================");
@@ -141,7 +155,7 @@ export const uploadVideo = async (req, res) => {
     console.log("Size:", stats.size);
     console.log("Duration:", duration);
     console.log("Video ID:", newVideo._id);
-    console.log("Video URL:", videoUrl);
+    console.log("Video URL:", newVideo.videoUrl);
     console.log("=================================");
 
     return res.status(201).json({
@@ -188,12 +202,21 @@ export const createVideoFromUrl = async (req, res) => {
       });
     }
 
-    const safeFilename = filename
-      ? getSafeFilename(filename)
-      : getSafeFilename(
-          path.basename(new URL(videoUrl).pathname),
-          `video-${Date.now()}.${format || "mp4"}`,
-        );
+    let safeFilename;
+
+    try {
+      safeFilename = filename
+        ? getSafeFilename(filename)
+        : getSafeFilename(
+            path.basename(new URL(videoUrl).pathname),
+            `video-${Date.now()}.${format || "mp4"}`,
+          );
+    } catch {
+      safeFilename = getSafeFilename(
+        filename,
+        `video-${Date.now()}.${format || "mp4"}`,
+      );
+    }
 
     const newVideo = await Video.create({
       title: title || getTitleFromFilename(safeFilename),
@@ -214,7 +237,7 @@ export const createVideoFromUrl = async (req, res) => {
 
       size: Number(size) || 0,
 
-      cbc: cbc.trim(),
+      cbc: String(cbc || "").trim(),
     });
 
     console.log("VIDEO CREATED:", newVideo._id);
@@ -236,7 +259,7 @@ export const createVideoFromUrl = async (req, res) => {
 };
 
 // ==========================================
-// CREATE VIDEO FROM LOCAL /videos FOLDER
+// CREATE VIDEO FROM LOCAL FILE
 // ==========================================
 
 export const createLocalVideo = async (req, res) => {
@@ -283,14 +306,18 @@ export const createLocalVideo = async (req, res) => {
 
     const extension = getExtension(safeFilename);
 
-    const videoUrl = getVideoUrl(safeFilename);
+    // ==========================================
+    // CREATE DATABASE RECORD
+    // ==========================================
 
     const newVideo = await Video.create({
       title: title || getTitleFromFilename(safeFilename),
 
       publicId: `local-${Date.now()}`,
 
-      videoUrl,
+      videoUrl: "",
+
+      sourceUrl: "",
 
       filename: safeFilename,
 
@@ -302,8 +329,16 @@ export const createLocalVideo = async (req, res) => {
 
       size: stats.size,
 
-      cbc: cbc.trim(),
+      cbc: String(cbc || "").trim(),
     });
+
+    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
+
+    await newVideo.save();
+
+    console.log("VIDEO CREATED:", newVideo._id);
+
+    console.log("VIDEO URL:", newVideo.videoUrl);
 
     return res.status(201).json({
       message: "Local video added successfully",
@@ -418,15 +453,21 @@ export const updateVideo = async (req, res) => {
     const video = await Video.findByIdAndUpdate(
       id,
       {
-        ...(videoUrl !== undefined && { videoUrl }),
+        ...(videoUrl !== undefined && {
+          videoUrl,
+        }),
 
-        ...(title !== undefined && { title }),
+        ...(title !== undefined && {
+          title,
+        }),
 
         ...(thumbnailUrl !== undefined && {
           thumbnailUrl,
         }),
 
-        ...(cbc !== undefined && { cbc }),
+        ...(cbc !== undefined && {
+          cbc,
+        }),
       },
       {
         new: true,
@@ -455,7 +496,7 @@ export const updateVideo = async (req, res) => {
 };
 
 // ==========================================
-// DOWNLOAD FILE
+// DOWNLOAD WETRANSFER FILE
 // ==========================================
 
 async function downloadWeTransferVideo(
@@ -501,7 +542,9 @@ async function downloadWeTransferVideo(
   const contentLength = Number(response.headers["content-length"] || 0);
 
   console.log("STATUS:", response.status);
+
   console.log("CONTENT TYPE:", contentType);
+
   console.log("CONTENT LENGTH:", contentLength);
 
   if (
@@ -641,7 +684,9 @@ async function downloadWeTransferVideo(
   }
 
   console.log("\n=================================");
+
   console.log("DOWNLOAD COMPLETE");
+
   console.log("=================================");
 
   const stats = await fs.promises.stat(outputPath);
@@ -743,14 +788,16 @@ export const testDownloadVideo = async (req, res) => {
 
     const extension = getExtension(safeFilename);
 
-    const videoUrl = getVideoUrl(safeFilename);
+    // ==========================================
+    // DATABASE
+    // ==========================================
 
     const newVideo = await Video.create({
       title: title || getTitleFromFilename(safeFilename),
 
       publicId: `wetransfer-${Date.now()}`,
 
-      videoUrl,
+      videoUrl: "",
 
       sourceUrl,
 
@@ -764,8 +811,16 @@ export const testDownloadVideo = async (req, res) => {
 
       size: result.size,
 
-      cbc: cbc.trim(),
+      cbc: String(cbc || "").trim(),
     });
+
+    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
+
+    await newVideo.save();
+
+    console.log("VIDEO CREATED:", newVideo._id);
+
+    console.log("VIDEO URL:", newVideo.videoUrl);
 
     setProgress(jobId, {
       status: "completed",
@@ -836,7 +891,7 @@ export const testDownloadVideo = async (req, res) => {
 };
 
 // ==========================================
-// CREATE WATCHABLE FROM SIGNED URL
+// CREATE WATCHABLE FROM WETRANSFER
 // BACKGROUND DOWNLOAD
 // ==========================================
 
@@ -853,6 +908,7 @@ export const createWatchableFromWeTransfer = async (req, res) => {
   if (!signedFileUrl) {
     return res.status(400).json({
       success: false,
+
       message: "signedFileUrl is required",
     });
   }
@@ -910,6 +966,9 @@ export const createWatchableFromWeTransfer = async (req, res) => {
       safeFilename += ".mp4";
     }
 
+    // Make filename unique
+    safeFilename = createVideoFilename(safeFilename);
+
     const outputPath = path.join(VIDEO_FOLDER, safeFilename);
 
     await fs.promises.mkdir(VIDEO_FOLDER, {
@@ -917,11 +976,17 @@ export const createWatchableFromWeTransfer = async (req, res) => {
     });
 
     console.log("=================================");
+
     console.log("BACKGROUND VIDEO DOWNLOAD");
+
     console.log("=================================");
+
     console.log("JOB ID:", jobId);
+
     console.log("FILENAME:", safeFilename);
+
     console.log("OUTPUT:", outputPath);
+
     console.log("=================================");
 
     const downloaded = await downloadWeTransferVideo(
@@ -968,14 +1033,12 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 
     const extension = getExtension(safeFilename);
 
-    const videoUrl = getVideoUrl(safeFilename);
-
     const newVideo = await Video.create({
       title: title || getTitleFromFilename(safeFilename),
 
       publicId: `wetransfer-${Date.now()}`,
 
-      videoUrl,
+      videoUrl: "",
 
       sourceUrl,
 
@@ -989,10 +1052,21 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 
       size: downloaded.size,
 
-      cbc: cbc.trim(),
+      cbc: String(cbc || "").trim(),
     });
 
+    // ==========================================
+    // IMPORTANT:
+    // URL USES MONGODB VIDEO ID
+    // ==========================================
+
+    newVideo.videoUrl = getVideoUrl(newVideo._id.toString());
+
+    await newVideo.save();
+
     console.log("VIDEO CREATED:", newVideo._id);
+
+    console.log("VIDEO URL:", newVideo.videoUrl);
 
     // ==========================================
     // COMPLETE
@@ -1039,9 +1113,13 @@ export const createWatchableFromWeTransfer = async (req, res) => {
     });
 
     console.log("=================================");
+
     console.log("JOB COMPLETED");
+
     console.log("JOB ID:", jobId);
+
     console.log("VIDEO ID:", newVideo._id.toString());
+
     console.log("=================================");
   } catch (error) {
     console.error("BACKGROUND DOWNLOAD ERROR:", error);
@@ -1116,7 +1194,10 @@ export const streamVideo = async (req, res) => {
 
     let filename = video.filename;
 
-    // Fallback for older database records
+    // ==========================================
+    // FALLBACK FOR OLD RECORDS
+    // ==========================================
+
     if (!filename && video.videoUrl) {
       try {
         const url = new URL(video.videoUrl);
@@ -1135,6 +1216,7 @@ export const streamVideo = async (req, res) => {
       });
     }
 
+    // Prevent path traversal
     filename = path.basename(filename);
 
     const filePath = path.join(VIDEO_FOLDER, filename);
@@ -1183,13 +1265,25 @@ export const streamVideo = async (req, res) => {
         "Accept-Ranges": "bytes",
       });
 
-      fs.createReadStream(filePath).pipe(res);
+      const stream = fs.createReadStream(filePath);
+
+      stream.on("error", (error) => {
+        console.error("VIDEO STREAM ERROR:", error);
+
+        if (!res.headersSent) {
+          res.status(500).end();
+        } else {
+          res.destroy(error);
+        }
+      });
+
+      stream.pipe(res);
 
       return;
     }
 
     // ==========================================
-    // RANGE
+    // RANGE REQUEST
     // ==========================================
 
     const rangeMatch = range.match(/bytes=(\d*)-(\d*)/);
@@ -1204,7 +1298,11 @@ export const streamVideo = async (req, res) => {
 
     let end = rangeMatch[2] !== "" ? parseInt(rangeMatch[2], 10) : fileSize - 1;
 
-    // Handle suffix range: bytes=-500
+    // ==========================================
+    // SUFFIX RANGE
+    // bytes=-500
+    // ==========================================
+
     if (rangeMatch[1] === "" && rangeMatch[2] !== "") {
       const suffixLength = parseInt(rangeMatch[2], 10);
 
