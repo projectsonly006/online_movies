@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
 import "./Admin.css";
 import { api } from "../api";
 
 function Admin() {
   const navigate = useNavigate();
+
+  const pollingRef = useRef(null);
 
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
@@ -15,80 +16,167 @@ function Admin() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const [progress, setProgress] = useState(null);
+
   // ==========================================
-  // CHECK LOGIN
+  // CHECK ADMIN LOGIN
   // ==========================================
 
   useEffect(() => {
     const token = localStorage.getItem("adminToken");
 
     if (!token) {
-      navigate("/admin/login", {
-        replace: true,
-      });
+      navigate("/admin/login", { replace: true });
     }
   }, [navigate]);
+
+  // ==========================================
+  // STOP POLLING
+  // ==========================================
+
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
 
   // ==========================================
   // LOGOUT
   // ==========================================
 
   const handleLogout = () => {
+    stopPolling();
+
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminUser");
 
-    navigate("/admin/login", {
-      replace: true,
-    });
+    navigate("/admin/login", { replace: true });
+  };
+
+  // ==========================================
+  // POLL DOWNLOAD PROGRESS
+  // ==========================================
+
+  const startProgressPolling = (jobId) => {
+    stopPolling();
+
+    const checkProgress = async () => {
+      try {
+        const token = localStorage.getItem("adminToken");
+
+        if (!token) {
+          stopPolling();
+
+          navigate("/admin/login", {
+            replace: true,
+          });
+
+          return;
+        }
+
+        const response = await fetch(
+          api(`/api/videos/download-progress/${jobId}`),
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+
+        const data = await response.json();
+
+        if (response.status === 401 || response.status === 403) {
+          stopPolling();
+
+          localStorage.removeItem("adminToken");
+          localStorage.removeItem("adminUser");
+
+          navigate("/admin/login", {
+            replace: true,
+          });
+
+          return;
+        }
+
+        if (!response.ok) {
+          return;
+        }
+
+        setProgress(data);
+
+        if (data.status === "completed" && data.videoId) {
+          stopPolling();
+
+          setLoading(false);
+
+          setSuccess("Movie added successfully!");
+
+          setTitle("");
+          setUrl("");
+          setCbc("");
+
+          setProgress({
+            ...data,
+            percentage: 100,
+          });
+
+          return;
+        }
+
+        if (data.status === "error") {
+          stopPolling();
+
+          setLoading(false);
+
+          setError(data.error || "Download failed");
+        }
+      } catch (error) {
+        console.error("PROGRESS ERROR:", error);
+      }
+    };
+
+    checkProgress();
+
+    pollingRef.current = setInterval(checkProgress, 1000);
   };
 
   // ==========================================
   // SUBMIT
   // ==========================================
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
     setError("");
     setSuccess("");
+    setProgress(null);
 
     const token = localStorage.getItem("adminToken");
 
     if (!token) {
-      navigate("/admin/login", {
-        replace: true,
-      });
-
+      navigate("/admin/login", { replace: true });
       return;
     }
 
-    const cleanTitle = title.trim();
-    const cleanUrl = url.trim();
-    const cleanCbc = cbc.trim();
-
-    if (!cleanTitle) {
+    if (!title.trim()) {
       setError("Please enter the movie title.");
       return;
     }
 
-    if (!cleanUrl) {
+    if (!url.trim()) {
       setError("Please enter the video URL.");
       return;
     }
 
-    if (!cleanCbc) {
+    if (!cbc.trim()) {
       setError("Please select the CBC rating.");
       return;
     }
 
-    try {
-      new URL(cleanUrl);
-    } catch {
-      setError("Please enter a valid video URL.");
-      return;
-    }
-
     setLoading(true);
+
+    const jobId = crypto.randomUUID();
 
     try {
       const response = await fetch(api("/api/videos/create-watchable"), {
@@ -96,22 +184,20 @@ function Admin() {
 
         headers: {
           "Content-Type": "application/json",
-
           Authorization: `Bearer ${token}`,
         },
 
         body: JSON.stringify({
-          signedFileUrl: cleanUrl,
-
-          title: cleanTitle,
-
-          cbc: cleanCbc,
+          signedFileUrl: url.trim(),
+          title: title.trim(),
+          cbc: cbc.trim(),
+          jobId,
         }),
       });
 
       const data = await response.json();
 
-      console.log("CREATE MOVIE RESPONSE:", data);
+      console.log("CREATE VIDEO RESPONSE:", data);
 
       if (response.status === 401 || response.status === 403) {
         localStorage.removeItem("adminToken");
@@ -125,27 +211,46 @@ function Admin() {
       }
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to add movie");
+        throw new Error(data.message || "Failed to create video");
       }
 
-      setSuccess(
-        "Movie added successfully. It is now visible in the movie library.",
-      );
-
-      setTitle("");
-      setUrl("");
-      setCbc("");
+      startProgressPolling(data.jobId || jobId);
     } catch (error) {
-      console.error("ADD MOVIE ERROR:", error);
+      console.error("CREATE VIDEO ERROR:", error);
 
-      setError(error.message || "Failed to add movie");
-    } finally {
       setLoading(false);
+
+      setError(error.message || "Failed to create video");
     }
   };
 
   // ==========================================
-  // ADMIN USER
+  // CLEANUP
+  // ==========================================
+
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, []);
+
+  // ==========================================
+  // PROGRESS
+  // ==========================================
+
+  const percentage = Math.min(
+    100,
+    Math.max(0, Number(progress?.percentage || 0)),
+  );
+
+  const downloadedMB = progress?.downloadedMB ?? 0;
+
+  const totalMB = progress?.totalMB ?? 0;
+
+  const speed = progress?.speedMBps ?? 0;
+
+  // ==========================================
+  // USER
   // ==========================================
 
   let adminUser = null;
@@ -163,6 +268,8 @@ function Admin() {
   return (
     <main className="admin-page">
       <div className="admin-container">
+        {/* HEADER */}
+
         <header className="admin-header">
           <div className="admin-brand">
             <div className="admin-logo">▶</div>
@@ -187,6 +294,8 @@ function Admin() {
           </div>
         </header>
 
+        {/* CREATE MOVIE */}
+
         <section className="admin-card">
           <div className="admin-card-header">
             <div>
@@ -194,7 +303,7 @@ function Admin() {
 
               <h2>Add Movie</h2>
 
-              <p>Add a movie using its authorized video URL.</p>
+              <p>Add a movie to your video library.</p>
             </div>
           </div>
 
@@ -208,7 +317,7 @@ function Admin() {
                 id="movie-title"
                 type="text"
                 value={title}
-                onChange={(event) => setTitle(event.target.value)}
+                onChange={(e) => setTitle(e.target.value)}
                 placeholder="Enter movie title"
                 disabled={loading}
               />
@@ -223,15 +332,14 @@ function Admin() {
                 id="movie-url"
                 type="url"
                 value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="Paste the direct video URL"
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="Paste the authorized video download URL"
                 disabled={loading}
                 required
               />
 
               <span className="input-help">
-                The server stores this URL. The video is not downloaded or
-                stored on your server.
+                Use the direct signed video download URL.
               </span>
             </div>
 
@@ -243,7 +351,7 @@ function Admin() {
               <select
                 id="movie-cbc"
                 value={cbc}
-                onChange={(event) => setCbc(event.target.value)}
+                onChange={(e) => setCbc(e.target.value)}
                 disabled={loading}
               >
                 <option value="">Select rating</option>
@@ -265,9 +373,66 @@ function Admin() {
               type="submit"
               disabled={loading}
             >
-              {loading ? "Adding Movie..." : "＋ Add Movie"}
+              {loading ? (
+                <>
+                  <span className="button-spinner"></span>
+                  Adding Movie...
+                </>
+              ) : (
+                <>
+                  <span>＋</span>
+                  Add Movie
+                </>
+              )}
             </button>
           </form>
+
+          {/* PROGRESS */}
+
+          {loading && progress && (
+            <div className="admin-progress">
+              <div className="progress-header">
+                <div>
+                  <h3>Adding movie</h3>
+
+                  <span>
+                    {progress.status === "starting"
+                      ? "Starting download..."
+                      : progress.status === "downloading"
+                        ? "Downloading..."
+                        : progress.status === "processing"
+                          ? "Processing video..."
+                          : progress.status}
+                  </span>
+                </div>
+
+                <strong>{percentage.toFixed(1)}%</strong>
+              </div>
+
+              <div className="progress-track">
+                <div
+                  className="progress-fill"
+                  style={{
+                    width: `${percentage}%`,
+                  }}
+                />
+              </div>
+
+              <div className="progress-stats">
+                <span>
+                  Downloaded: <strong>{downloadedMB} MB</strong>
+                </span>
+
+                <span>
+                  Total: <strong>{totalMB} MB</strong>
+                </span>
+
+                <span>
+                  Speed: <strong>{speed} MB/s</strong>
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* ERROR */}
 
@@ -277,6 +442,8 @@ function Admin() {
 
           {success && <div className="admin-message success">{success}</div>}
         </section>
+
+        {/* BACK TO HOME */}
 
         <button className="back-home-button" onClick={() => navigate("/")}>
           ← Movie Library

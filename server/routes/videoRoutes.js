@@ -1,36 +1,66 @@
 import express from "express";
 
 import {
-  createWatchableFromWeTransfer,
+  uploadVideo,
+  createVideoFromUrl,
+  createLocalVideo,
   getVideos,
   getVideo,
   updateVideo,
-  deleteVideo,
+  testDownloadVideo,
+  createWatchableFromWeTransfer,
+  getDownloadProgress,
   streamVideo,
 } from "../controllers/videoController.js";
 
-import { protectAdmin } from "../middleware/adminAuth.js";
+import { adminAuth } from "../middleware/adminAuth.js";
 
 const router = express.Router();
 
 // ==========================================
-// PUBLIC
+// ADMIN ONLY - CREATE / MODIFY VIDEOS
+// ==========================================
+
+// Upload video file to local /videos folder
+router.post("/upload", adminAuth, uploadVideo);
+
+// Create video from an existing external URL
+router.post("/create-url", adminAuth, createVideoFromUrl);
+
+// Create video from an existing local /videos file
+router.post("/create-local", adminAuth, createLocalVideo);
+
+// Test direct download of a signed URL
+router.post("/test-download", adminAuth, testDownloadVideo);
+
+// Start background WeTransfer download
+router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
+
+// Update video
+router.put("/:id", adminAuth, updateVideo);
+
+// ==========================================
+// PUBLIC - DOWNLOAD PROGRESS
+// ==========================================
+
+router.get("/download-progress/:jobId", getDownloadProgress);
+
+// ==========================================
+// PUBLIC - VIDEO LIST
 // ==========================================
 
 router.get("/", getVideos);
 
-router.get("/:id", getVideo);
+// ==========================================
+// PUBLIC - VIDEO STREAM
+// ==========================================
 
 router.get("/stream/:id", streamVideo);
 
 // ==========================================
-// ADMIN
+// PUBLIC - SINGLE VIDEo
 // ==========================================
 
-router.post("/create-watchable", protectAdmin, createWatchableFromWeTransfer);
-
-router.put("/:id", protectAdmin, updateVideo);
-
-router.delete("/:id", protectAdmin, deleteVideo);
+router.get("/:id", getVideo);
 
 export default router;

@@ -11,33 +11,55 @@ function Home() {
 
   const navigate = useNavigate();
 
+  // ==========================================
+  // FETCH AVAILABLE VIDEOS
+  // ==========================================
+
   const fetchVideos = async () => {
     try {
       setVideosLoading(true);
       setError("");
 
-      const response = await fetch(api("/api/videos"));
+      // const response = await fetch("http://localhost:5000/api/videos");
+      const response = await fetch(api(`/api/videos`));
 
       const data = await response.json();
+
+      console.log("AVAILABLE VIDEOS:", data);
 
       if (!response.ok) {
         throw new Error(data.message || "Failed to load videos");
       }
 
-      setVideos(Array.isArray(data.videos) ? data.videos : []);
+      if (Array.isArray(data)) {
+        setVideos(data);
+      } else if (Array.isArray(data.videos)) {
+        setVideos(data.videos);
+      } else {
+        setVideos([]);
+      }
     } catch (error) {
       console.error("FETCH VIDEOS ERROR:", error);
 
       setVideos([]);
+
       setError("Failed to load videos. Please try again.");
     } finally {
       setVideosLoading(false);
     }
   };
 
+  // ==========================================
+  // INITIAL LOAD
+  // ==========================================
+
   useEffect(() => {
     fetchVideos();
   }, []);
+
+  // ==========================================
+  // FORMAT DURATION
+  // ==========================================
 
   const formatDuration = (seconds) => {
     const duration = Number(seconds || 0);
@@ -61,9 +83,17 @@ function Home() {
     return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
   };
 
+  // ==========================================
+  // RENDER
+  // ==========================================
+
   return (
     <main className="home-page">
       <div className="home-container">
+        {/* ======================================
+            HEADER
+        ====================================== */}
+
         <header className="home-header">
           <div className="home-brand">
             <div className="logo-icon">▶</div>
@@ -73,6 +103,8 @@ function Home() {
             </div>
           </div>
 
+          {/* ADMIN LOGIN */}
+
           <button
             className="admin-login-button"
             onClick={() => navigate("/admin/login")}
@@ -81,6 +113,10 @@ function Home() {
             Admin
           </button>
         </header>
+
+        {/* ======================================
+            AVAILABLE VIDEOS
+        ====================================== */}
 
         <section className="available-videos">
           <div className="available-header">
@@ -107,6 +143,10 @@ function Home() {
             </div>
           </div>
 
+          {/* ======================================
+              ERROR
+          ====================================== */}
+
           {error && (
             <div className="error-message">
               <span className="error-icon">!</span>
@@ -119,9 +159,13 @@ function Home() {
             </div>
           )}
 
+          {/* ======================================
+              LOADING
+          ====================================== */}
+
           {videosLoading ? (
             <div className="videos-empty">
-              <div className="watch-spinner" />
+              <div className="watch-spinner"></div>
 
               <p>Loading videos...</p>
             </div>
@@ -142,12 +186,14 @@ function Home() {
                   onClick={() => navigate(`/watch/${item._id}`)}
                   role="button"
                   tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
                       navigate(`/watch/${item._id}`);
                     }
                   }}
                 >
+                  {/* THUMBNAIL */}
+
                   <div className="library-thumbnail">
                     {item.thumbnailUrl ? (
                       <img
@@ -162,12 +208,12 @@ function Home() {
 
                     <div className="play-overlay">▶</div>
 
-                    {item.duration > 0 && (
-                      <span className="duration-badge">
-                        {formatDuration(item.duration)}
-                      </span>
-                    )}
+                    <span className="duration-badge">
+                      {formatDuration(item.duration)}
+                    </span>
                   </div>
+
+                  {/* INFO */}
 
                   <div className="library-info">
                     <h3 title={item.title}>{item.title || "Untitled Video"}</h3>
@@ -185,6 +231,10 @@ function Home() {
             </div>
           )}
         </section>
+
+        {/* ======================================
+            FOOTER
+        ====================================== */}
 
         <p className="home-footer">
           Browse the available movies and select one to watch.
