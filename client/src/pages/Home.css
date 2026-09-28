@@ -86,7 +86,7 @@
   box-shadow: 0 10px 25px rgba(37, 99, 235, 0.25);
 }
 
-.home-header h1 {
+.home-header h2 {
   margin: 0;
 
   color: #111827;
@@ -1022,7 +1022,7 @@
     font-size: 20px;
   }
 
-  .home-header h1 {
+  .home-header h2 {
     font-size: 23px;
   }
 

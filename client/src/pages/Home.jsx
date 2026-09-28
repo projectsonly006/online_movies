@@ -99,6 +99,7 @@ function Home() {
             <div className="logo-icon">▶</div>
 
             <div>
+              <h2>Now Showing</h2>
               <p>Watch your available movies</p>
             </div>
           </div>
