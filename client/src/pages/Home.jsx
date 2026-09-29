@@ -222,7 +222,16 @@ function Home() {
                     <div className="library-meta">
                       {item.cbc && (
                         <span>
-                          <strong>{item.cbc}</strong> Rated
+                          <strong>{item.cbc}</strong>{" "}
+                          {item.cbc === "U"
+                            ? "Universal — watch with parents"
+                            : item.cbc === "U/A"
+                              ? "Parental guidance advised"
+                              : item.cbc === "A"
+                                ? "Adults only"
+                                : item.cbc === "R"
+                                  ? "Restricted age-restricted content"
+                                  : "Rated"}
                         </span>
                       )}
                     </div>
