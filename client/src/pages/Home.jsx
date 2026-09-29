@@ -219,6 +219,13 @@ function Home() {
                   <div className="library-info">
                     <h3 title={item.title}>{item.title || "Untitled Video"}</h3>
 
+                    {/* <div className="library-meta">
+                      {item.cbc && (
+                        <span>
+                          <strong>{item.cbc}</strong> Rated
+                        </span>
+                      )}
+                    </div> */}
                     <div className="library-meta">
                       {item.cbc && (
                         <span>
