@@ -1044,6 +1044,10 @@ body {
   .movie-slot-status {
     align-self: flex-start;
   }
+
+  .center-play-button {
+    display: none;
+  }
 }
 
 /* ==========================================
