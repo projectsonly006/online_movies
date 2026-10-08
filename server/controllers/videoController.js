@@ -935,105 +935,105 @@ export const deleteVideo = async (req, res) => {
 // BACKGROUND DOWNLOAD
 // ==========================================
 
-// export const createWatchableFromWeTransfer = async (req, res) => {
-//   try {
-//     const {
-//       sourceUrl = "",
-//       title = "",
-//       filename = "",
-//       cbc = "",
-//       duration = 0,
-//       format = "mp4",
-//       size = 0,
-//     } = req.body;
+export const createWatchableFromWeTransfer = async (req, res) => {
+  try {
+    const {
+      sourceUrl = "",
+      title = "",
+      filename = "",
+      cbc = "",
+      duration = 0,
+      format = "mp4",
+      size = 0,
+    } = req.body;
 
-//     if (!sourceUrl) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "WeTransfer URL is required",
-//       });
-//     }
+    if (!sourceUrl) {
+      return res.status(400).json({
+        success: false,
+        message: "WeTransfer URL is required",
+      });
+    }
 
-//     // Make sure it is actually a WeTransfer URL
-//     let parsedUrl;
+    // Make sure it is actually a WeTransfer URL
+    let parsedUrl;
 
-//     try {
-//       parsedUrl = new URL(sourceUrl);
-//     } catch {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid URL",
-//       });
-//     }
+    try {
+      parsedUrl = new URL(sourceUrl);
+    } catch {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid URL",
+      });
+    }
 
-//     if (
-//       parsedUrl.hostname !== "we.tl" &&
-//       !parsedUrl.hostname.endsWith(".wetransfer.com")
-//     ) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Only WeTransfer URLs are supported",
-//       });
-//     }
+    if (
+      parsedUrl.hostname !== "we.tl" &&
+      !parsedUrl.hostname.endsWith(".wetransfer.com")
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Only WeTransfer URLs are supported",
+      });
+    }
 
-//     const newVideo = await Video.create({
-//       title: title.trim() || "Untitled Video",
+    const newVideo = await Video.create({
+      title: title.trim() || "Untitled Video",
 
-//       publicId: `wetransfer-${Date.now()}`,
+      publicId: `wetransfer-${Date.now()}`,
 
-//       // We are NOT storing a local video URL
-//       videoUrl: "",
+      // We are NOT storing a local video URL
+      videoUrl: "",
 
-//       // This is the important part
-//       sourceUrl: sourceUrl.trim(),
+      // This is the important part
+      sourceUrl: sourceUrl.trim(),
 
-//       filename: filename.trim(),
+      filename: filename.trim(),
 
-//       thumbnailUrl: "",
+      thumbnailUrl: "",
 
-//       duration: Number(duration) || 0,
+      duration: Number(duration) || 0,
 
-//       format: format || "mp4",
+      format: format || "mp4",
 
-//       size: Number(size) || 0,
+      size: Number(size) || 0,
 
-//       cbc: cbc.trim(),
-//     });
+      cbc: cbc.trim(),
+    });
 
-//     console.log("=================================");
-//     console.log("WETRANSFER VIDEO CREATED");
-//     console.log("VIDEO ID:", newVideo._id);
-//     console.log("SOURCE:", newVideo.sourceUrl);
-//     console.log("NO VIDEO DOWNLOADED");
-//     console.log("=================================");
+    console.log("=================================");
+    console.log("WETRANSFER VIDEO CREATED");
+    console.log("VIDEO ID:", newVideo._id);
+    console.log("SOURCE:", newVideo.sourceUrl);
+    console.log("NO VIDEO DOWNLOADED");
+    console.log("=================================");
 
-//     return res.status(201).json({
-//       success: true,
+    return res.status(201).json({
+      success: true,
 
-//       message: "WeTransfer video added successfully",
+      message: "WeTransfer video added successfully",
 
-//       video: {
-//         id: newVideo._id,
-//         title: newVideo.title,
-//         videoUrl: "",
-//         sourceUrl: newVideo.sourceUrl,
-//         duration: newVideo.duration,
-//         format: newVideo.format,
-//         size: newVideo.size,
-//         cbc: newVideo.cbc,
-//       },
+      video: {
+        id: newVideo._id,
+        title: newVideo.title,
+        videoUrl: "",
+        sourceUrl: newVideo.sourceUrl,
+        duration: newVideo.duration,
+        format: newVideo.format,
+        size: newVideo.size,
+        cbc: newVideo.cbc,
+      },
 
-//       watchUrl: `/watch/${newVideo._id}`,
-//     });
-//   } catch (error) {
-//     console.error("CREATE WETRANSFER VIDEO ERROR:", error);
+      watchUrl: `/watch/${newVideo._id}`,
+    });
+  } catch (error) {
+    console.error("CREATE WETRANSFER VIDEO ERROR:", error);
 
-//     return res.status(500).json({
-//       success: false,
-//       message: error.message || "Failed to create video",
-//     });
-//   }
-// };
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to create video",
+    });
+  }
+};
 
 // ==========================================
 // GET DOWNLOAD PROGRESS

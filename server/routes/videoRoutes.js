@@ -7,7 +7,7 @@ import {
   getVideos,
   getVideo,
   updateVideo,
-  // createWatchableFromWeTransfer,
+  createWatchableFromWeTransfer,
   // streamVideo,
   deleteVideo,
   // checkVideoAvailability,
@@ -22,7 +22,7 @@ const router = express.Router();
 router.post("/upload", adminAuth, uploadVideo);
 router.post("/create-url", adminAuth, createVideoFromUrl);
 router.post("/create-local", adminAuth, createLocalVideo);
-// router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
+router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
 
 router.get("/download-progress/:jobId", adminAuth, getDownloadProgress);
 
