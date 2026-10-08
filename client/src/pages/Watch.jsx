@@ -31,56 +31,180 @@ function Watch() {
   const [showControls, setShowControls] = useState(true);
 
   // ==========================================
+  // CHECK VIDEO AVAILABILITY
+  // ==========================================
+
+  const checkVideoAvailability = async () => {
+    try {
+      const response = await fetch(api(`/api/videos/availability/${id}`), {
+        cache: "no-store",
+      });
+
+      let data = {};
+
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      console.log("VIDEO AVAILABILITY:", {
+        status: response.status,
+        data,
+      });
+
+      /*
+       * IMPORTANT:
+       * 410 = video/link permanently unavailable
+       *
+       * We also support:
+       * available: false
+       * VIDEO_LINK_EXPIRED
+       * VIDEO_NOT_FOUND
+       */
+
+      if (
+        response.status === 410 ||
+        response.status === 404 ||
+        data.code === "VIDEO_LINK_EXPIRED" ||
+        data.code === "VIDEO_NOT_FOUND" ||
+        data.available === false ||
+        data.exists === false
+      ) {
+        setVideoExpired(true);
+        setPlaying(false);
+
+        if (videoRef.current) {
+          videoRef.current.pause();
+          videoRef.current.removeAttribute("src");
+          videoRef.current.load();
+        }
+
+        return false;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to check video availability");
+      }
+
+      return true;
+    } catch (error) {
+      console.error("AVAILABILITY CHECK ERROR:", error);
+
+      /*
+       * Do not immediately mark the video as expired for
+       * temporary network errors.
+       */
+      return true;
+    }
+  };
+
+  // ==========================================
   // FETCH VIDEO
   // ==========================================
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchVideo = async () => {
       try {
         setLoading(true);
         setError("");
         setVideoExpired(false);
 
-        const response = await fetch(api(`/api/videos/${id}`));
+        // ------------------------------------------
+        // FIRST: CHECK IF VIDEO STILL EXISTS
+        // ------------------------------------------
 
-        const data = await response.json();
+        const available = await checkVideoAvailability();
+
+        if (!available || cancelled) {
+          return;
+        }
+
+        // ------------------------------------------
+        // SECOND: GET VIDEO INFORMATION
+        // ------------------------------------------
+
+        const response = await fetch(api(`/api/videos/${id}`), {
+          cache: "no-store",
+        });
+
+        let data = {};
+
+        try {
+          data = await response.json();
+        } catch {
+          data = {};
+        }
 
         console.log("VIDEO DATA:", data);
 
         if (!response.ok) {
+          if (
+            response.status === 410 ||
+            response.status === 404 ||
+            data.code === "VIDEO_LINK_EXPIRED" ||
+            data.code === "VIDEO_NOT_FOUND"
+          ) {
+            setVideoExpired(true);
+            return;
+          }
+
           throw new Error(data.message || "Failed to load video");
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        // ------------------------------------------
+        // EXTRA FRONTEND SAFETY CHECK
+        // ------------------------------------------
+
+        if (
+          !data ||
+          data.available === false ||
+          data.deleted === true ||
+          data.expired === true ||
+          data.status === "deleted" ||
+          data.status === "expired"
+        ) {
+          setVideoExpired(true);
+          return;
         }
 
         setVideo(data);
 
-        // ==========================================
-        // CHECK IF ACTUAL VIDEO FILE EXISTS
-        // ==========================================
+        // ------------------------------------------
+        // CHECK AGAIN AFTER FETCHING VIDEO
+        // ------------------------------------------
 
-        const availabilityResponse = await fetch(
-          api(`/api/videos/availability/${id}`),
-        );
+        const stillAvailable = await checkVideoAvailability();
 
-        const availabilityData = await availabilityResponse.json();
-
-        console.log("VIDEO AVAILABILITY:", availabilityData);
-
-        if (
-          availabilityResponse.status === 410 ||
-          availabilityData.code === "VIDEO_LINK_EXPIRED"
-        ) {
-          setVideoExpired(true);
+        if (!stillAvailable || cancelled) {
+          return;
         }
       } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
         console.error("FETCH VIDEO ERROR:", error);
 
         setError(error.message || "Failed to load video");
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
     fetchVideo();
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   // ==========================================
@@ -123,6 +247,10 @@ function Watch() {
     setShowSettings(false);
   };
 
+  // ==========================================
+  // VIDEO ERROR
+  // ==========================================
+
   const handleVideoError = async () => {
     const videoElement = videoRef.current;
 
@@ -132,29 +260,52 @@ function Watch() {
       currentSrc: videoElement?.currentSrc,
     });
 
-    // ==========================================
+    setPlaying(false);
+
+    // ------------------------------------------
     // CHECK BACKEND
-    // ==========================================
+    // ------------------------------------------
 
     try {
-      const response = await fetch(api(`/api/videos/availability/${id}`));
+      const response = await fetch(api(`/api/videos/availability/${id}`), {
+        cache: "no-store",
+      });
 
-      const data = await response.json();
+      let data = {};
+
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
 
       console.error("VIDEO AVAILABILITY AFTER PLAYER ERROR:", data);
 
-      if (response.status === 410 || data.code === "VIDEO_LINK_EXPIRED") {
+      if (
+        response.status === 410 ||
+        response.status === 404 ||
+        data.code === "VIDEO_LINK_EXPIRED" ||
+        data.code === "VIDEO_NOT_FOUND" ||
+        data.available === false ||
+        data.exists === false
+      ) {
         setVideoExpired(true);
-        setPlaying(false);
+
+        if (videoElement) {
+          videoElement.pause();
+          videoElement.removeAttribute("src");
+          videoElement.load();
+        }
+
         return;
       }
     } catch (error) {
       console.error("AVAILABILITY CHECK ERROR:", error);
     }
 
-    // ==========================================
-    // FALLBACK
-    // ==========================================
+    // ------------------------------------------
+    // MEDIA ERROR
+    // ------------------------------------------
 
     const mediaError = videoElement?.error;
 
@@ -168,8 +319,6 @@ function Watch() {
     } else {
       setError("Unable to play this video.");
     }
-
-    setPlaying(false);
   };
 
   // ==========================================
@@ -203,7 +352,7 @@ function Watch() {
   const togglePlay = async () => {
     const videoElement = videoRef.current;
 
-    if (!videoElement) {
+    if (!videoElement || videoExpired) {
       return;
     }
 
@@ -223,8 +372,11 @@ function Watch() {
   // ==========================================
 
   const handlePlay = () => {
-    setPlaying(true);
+    if (videoExpired) {
+      return;
+    }
 
+    setPlaying(true);
     setShowControls(true);
 
     if (controlsTimerRef.current) {
@@ -248,15 +400,19 @@ function Watch() {
   };
 
   const handleLoadedMetadata = () => {
-    if (!videoRef.current) {
+    if (!videoRef.current || videoExpired) {
       return;
     }
 
-    setVideoDuration(videoRef.current.duration || 0);
+    const duration = videoRef.current.duration;
+
+    if (Number.isFinite(duration)) {
+      setVideoDuration(duration);
+    }
   };
 
   const handleTimeUpdate = () => {
-    if (!videoRef.current) {
+    if (!videoRef.current || videoExpired) {
       return;
     }
 
@@ -281,7 +437,7 @@ function Watch() {
   const handleSeek = (event) => {
     const value = Number(event.target.value);
 
-    if (!videoRef.current) {
+    if (!videoRef.current || videoExpired) {
       return;
     }
 
@@ -296,16 +452,15 @@ function Watch() {
   // ==========================================
 
   const skip = (seconds) => {
-    if (!videoRef.current) {
+    if (!videoRef.current || videoExpired) {
       return;
     }
 
+    const duration = videoRef.current.duration || 0;
+
     videoRef.current.currentTime = Math.max(
       0,
-      Math.min(
-        videoRef.current.duration || 0,
-        videoRef.current.currentTime + seconds,
-      ),
+      Math.min(duration, videoRef.current.currentTime + seconds),
     );
 
     showPlayerControls();
@@ -318,7 +473,7 @@ function Watch() {
   const handleVolume = (event) => {
     const value = Number(event.target.value);
 
-    if (!videoRef.current) {
+    if (!videoRef.current || videoExpired) {
       return;
     }
 
@@ -330,6 +485,7 @@ function Watch() {
     }
 
     setVolume(value);
+
     showPlayerControls();
   };
 
@@ -338,7 +494,7 @@ function Watch() {
   // ==========================================
 
   const toggleMute = () => {
-    if (!videoRef.current) {
+    if (!videoRef.current || videoExpired) {
       return;
     }
 
@@ -354,7 +510,7 @@ function Watch() {
   // ==========================================
 
   const changePlaybackRate = (rate) => {
-    if (!videoRef.current) {
+    if (!videoRef.current || videoExpired) {
       return;
     }
 
@@ -373,17 +529,15 @@ function Watch() {
   const toggleFullscreen = async () => {
     const wrapper = document.querySelector(".custom-video-player");
 
-    if (!wrapper) {
+    if (!wrapper || videoExpired) {
       return;
     }
 
     try {
       if (!document.fullscreenElement) {
         await wrapper.requestFullscreen();
-        setFullscreen(true);
       } else {
         await document.exitFullscreen();
-        setFullscreen(false);
       }
     } catch (error) {
       console.error("FULLSCREEN ERROR:", error);
@@ -428,7 +582,7 @@ function Watch() {
         return;
       }
 
-      if (!videoRef.current) {
+      if (!videoRef.current || videoExpired) {
         return;
       }
 
@@ -470,7 +624,7 @@ function Watch() {
     return () => {
       window.removeEventListener("keydown", handleKeyboard);
     };
-  }, []);
+  }, [videoExpired]);
 
   // ==========================================
   // LOADING
@@ -491,7 +645,7 @@ function Watch() {
   }
 
   // ==========================================
-  // VIDEO EXPIRED / NO LONGER AVAILABLE
+  // VIDEO EXPIRED / DELETED
   // ==========================================
 
   if (videoExpired) {
@@ -512,11 +666,11 @@ function Watch() {
             <div className="watch-error video-expired-error">
               <div className="error-circle">!</div>
 
-              <h2>Video Link Expired</h2>
+              <h2>Video No Longer Available</h2>
 
-              <p>This video is no longer available.</p>
+              <p>This video has been deleted or its link has expired.</p>
 
-              <p>Please contact the admin to restore or update the video.</p>
+              <p>Please contact the admin if you believe this is an error.</p>
 
               <button onClick={() => navigate("/")}>← Back to Home</button>
             </div>
@@ -614,30 +768,32 @@ function Watch() {
           >
             {/* VIDEO */}
 
-            <video
-              ref={videoRef}
-              className="video-player"
-              preload="metadata"
-              src={api(`/api/videos/stream/${video.id}`)}
-              controls={false}
-              controlsList="nodownload"
-              disablePictureInPicture
-              playsInline
-              onPlay={handlePlay}
-              onPause={handlePause}
-              onLoadedMetadata={handleLoadedMetadata}
-              onTimeUpdate={handleTimeUpdate}
-              onEnded={handleVideoEnded}
-              onError={handleVideoError}
-              onClick={() => {
-                togglePlay();
-                showPlayerControls();
-              }}
-            />
+            {!videoExpired && (
+              <video
+                ref={videoRef}
+                className="video-player"
+                preload="metadata"
+                src={api(`/api/videos/stream/${video.id}`)}
+                controls={false}
+                controlsList="nodownload"
+                disablePictureInPicture
+                playsInline
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onLoadedMetadata={handleLoadedMetadata}
+                onTimeUpdate={handleTimeUpdate}
+                onEnded={handleVideoEnded}
+                onError={handleVideoError}
+                onClick={() => {
+                  togglePlay();
+                  showPlayerControls();
+                }}
+              />
+            )}
 
             {/* CENTER PLAY BUTTON */}
 
-            {!playing && (
+            {!playing && !videoExpired && (
               <button
                 className="center-play-button"
                 onClick={togglePlay}
@@ -650,151 +806,153 @@ function Watch() {
 
             {/* CONTROLS */}
 
-            <div
-              className={`player-controls ${
-                showControls ? "controls-visible" : "controls-hidden"
-              }`}
-              onClick={(event) => {
-                event.stopPropagation();
-                showPlayerControls();
-              }}
-              onTouchStart={(event) => {
-                event.stopPropagation();
-                showPlayerControls();
-              }}
-            >
-              {/* PROGRESS */}
+            {!videoExpired && (
+              <div
+                className={`player-controls ${
+                  showControls ? "controls-visible" : "controls-hidden"
+                }`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  showPlayerControls();
+                }}
+                onTouchStart={(event) => {
+                  event.stopPropagation();
+                  showPlayerControls();
+                }}
+              >
+                {/* PROGRESS */}
 
-              <div className="progress-container">
-                <input
-                  ref={progressRef}
-                  className="video-progress"
-                  type="range"
-                  min="0"
-                  max={displayDuration || 0}
-                  step="0.1"
-                  value={currentTime}
-                  onChange={handleSeek}
-                  style={{
-                    "--progress": `${progressPercentage}%`,
-                  }}
-                />
-              </div>
-
-              {/* BOTTOM CONTROLS */}
-
-              <div className="controls-row">
-                <div className="controls-left">
-                  {/* PLAY */}
-
-                  <button
-                    className="player-button"
-                    onClick={togglePlay}
-                    title={playing ? "Pause" : "Play"}
-                  >
-                    {playing ? "❚❚" : "▶"}
-                  </button>
-
-                  {/* BACK 5 */}
-
-                  <button
-                    className="player-button skip-button"
-                    onClick={() => skip(-5)}
-                    title="Back 5 seconds"
-                  >
-                    ↶
-                  </button>
-
-                  {/* FORWARD 5 */}
-
-                  <button
-                    className="player-button skip-button"
-                    onClick={() => skip(5)}
-                    title="Forward 5 seconds"
-                  >
-                    ↷
-                  </button>
-
-                  {/* VOLUME */}
-
-                  <button
-                    className="player-button"
-                    onClick={toggleMute}
-                    title={muted ? "Unmute" : "Mute"}
-                  >
-                    {muted || volume === 0 ? "🔇" : "🔊"}
-                  </button>
-
+                <div className="progress-container">
                   <input
-                    className="volume-slider"
+                    ref={progressRef}
+                    className="video-progress"
                     type="range"
                     min="0"
-                    max="1"
-                    step="0.01"
-                    value={muted ? 0 : volume}
-                    onChange={handleVolume}
+                    max={displayDuration || 0}
+                    step="0.1"
+                    value={currentTime}
+                    onChange={handleSeek}
                     style={{
-                      "--volume": `${(muted ? 0 : volume) * 100}%`,
+                      "--progress": `${progressPercentage}%`,
                     }}
                   />
-
-                  {/* TIME */}
-
-                  <span className="player-time">
-                    {formatTime(currentTime)} / {formatTime(displayDuration)}
-                  </span>
                 </div>
 
-                {/* RIGHT CONTROLS */}
+                {/* BOTTOM CONTROLS */}
 
-                <div className="controls-right">
-                  {/* SETTINGS */}
+                <div className="controls-row">
+                  <div className="controls-left">
+                    {/* PLAY */}
 
-                  <div className="settings-container">
                     <button
-                      className="player-button settings-button"
-                      onClick={() => {
-                        setShowSettings((current) => !current);
-                        showPlayerControls();
-                      }}
-                      title="Settings"
+                      className="player-button"
+                      onClick={togglePlay}
+                      title={playing ? "Pause" : "Play"}
                     >
-                      ⚙
+                      {playing ? "❚❚" : "▶"}
                     </button>
 
-                    {showSettings && (
-                      <div className="settings-menu">
-                        <div className="settings-title">Playback speed</div>
+                    {/* BACK 5 */}
 
-                        {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => (
-                          <button
-                            key={rate}
-                            className={
-                              playbackRate === rate
-                                ? "settings-option active"
-                                : "settings-option"
-                            }
-                            onClick={() => changePlaybackRate(rate)}
-                          >
-                            {rate === 1 ? "Normal" : `${rate}x`}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <button
+                      className="player-button skip-button"
+                      onClick={() => skip(-5)}
+                      title="Back 5 seconds"
+                    >
+                      ↶
+                    </button>
+
+                    {/* FORWARD 5 */}
+
+                    <button
+                      className="player-button skip-button"
+                      onClick={() => skip(5)}
+                      title="Forward 5 seconds"
+                    >
+                      ↷
+                    </button>
+
+                    {/* VOLUME */}
+
+                    <button
+                      className="player-button"
+                      onClick={toggleMute}
+                      title={muted ? "Unmute" : "Mute"}
+                    >
+                      {muted || volume === 0 ? "🔇" : "🔊"}
+                    </button>
+
+                    <input
+                      className="volume-slider"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={muted ? 0 : volume}
+                      onChange={handleVolume}
+                      style={{
+                        "--volume": `${(muted ? 0 : volume) * 100}%`,
+                      }}
+                    />
+
+                    {/* TIME */}
+
+                    <span className="player-time">
+                      {formatTime(currentTime)} / {formatTime(displayDuration)}
+                    </span>
                   </div>
 
-                  {/* FULLSCREEN */}
+                  {/* RIGHT CONTROLS */}
 
-                  <button
-                    className="player-button"
-                    onClick={toggleFullscreen}
-                    title="Fullscreen"
-                  >
-                    ⛶
-                  </button>
+                  <div className="controls-right">
+                    {/* SETTINGS */}
+
+                    <div className="settings-container">
+                      <button
+                        className="player-button settings-button"
+                        onClick={() => {
+                          setShowSettings((current) => !current);
+                          showPlayerControls();
+                        }}
+                        title="Settings"
+                      >
+                        ⚙
+                      </button>
+
+                      {showSettings && (
+                        <div className="settings-menu">
+                          <div className="settings-title">Playback speed</div>
+
+                          {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => (
+                            <button
+                              key={rate}
+                              className={
+                                playbackRate === rate
+                                  ? "settings-option active"
+                                  : "settings-option"
+                              }
+                              onClick={() => changePlaybackRate(rate)}
+                            >
+                              {rate === 1 ? "Normal" : `${rate}x`}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* FULLSCREEN */}
+
+                    <button
+                      className="player-button"
+                      onClick={toggleFullscreen}
+                      title="Fullscreen"
+                    >
+                      ⛶
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* VIDEO INFORMATION */}
