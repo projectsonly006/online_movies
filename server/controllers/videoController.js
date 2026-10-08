@@ -925,3 +925,288 @@ export const createLocalVideo = async (req, res) => {
     });
   }
 };
+
+// ==========================================
+// CREATE VIDEO FROM DIRECT URL
+// ==========================================
+
+export const createVideoFromUrl = async (req, res) => {
+  try {
+    const {
+      title = "",
+      sourceUrl = "",
+      filename = "",
+      thumbnailUrl = "",
+      duration = 0,
+      format = "mp4",
+      size = 0,
+      cbc = "",
+    } = req.body || {};
+
+    if (!sourceUrl.trim()) {
+      return res.status(400).json({
+        success: false,
+        code: "MISSING_SOURCE_URL",
+        message: "Video URL is required",
+      });
+    }
+
+    try {
+      new URL(sourceUrl.trim());
+    } catch {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_URL",
+        message: "Invalid video URL",
+      });
+    }
+
+    let safeFilename = sanitizeFilename(filename);
+
+    if (!safeFilename) {
+      safeFilename = `video-${Date.now()}.${format || "mp4"}`;
+    }
+
+    safeFilename = getSafeFilename(safeFilename, `video-${Date.now()}.mp4`);
+
+    if (!path.extname(safeFilename)) {
+      safeFilename += `.${format || "mp4"}`;
+    }
+
+    const newVideo = await Video.create({
+      title:
+        title.trim() || getTitleFromFilename(safeFilename) || "Untitled Video",
+
+      publicId: `url-${Date.now()}-${uuidv4().slice(0, 8)}`,
+
+      videoUrl: sourceUrl.trim(),
+
+      sourceUrl: sourceUrl.trim(),
+
+      filename: safeFilename,
+
+      thumbnailUrl: thumbnailUrl.trim(),
+
+      duration: Number(duration) || 0,
+
+      format: getExtension(safeFilename),
+
+      size: Number(size) || 0,
+
+      cbc: cbc.trim(),
+    });
+
+    return res.status(201).json({
+      success: true,
+
+      message: "Video URL created successfully",
+
+      video: {
+        id: newVideo._id,
+        title: newVideo.title,
+        videoUrl: newVideo.videoUrl,
+        sourceUrl: newVideo.sourceUrl,
+        filename: newVideo.filename,
+        thumbnailUrl: newVideo.thumbnailUrl,
+        duration: newVideo.duration,
+        format: newVideo.format,
+        size: newVideo.size,
+        cbc: newVideo.cbc,
+      },
+
+      watchUrl: `/watch/${newVideo._id}`,
+    });
+  } catch (error) {
+    console.error("CREATE VIDEO FROM URL ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      code: "CREATE_VIDEO_FROM_URL_FAILED",
+      message: error.message || "Failed to create video from URL",
+    });
+  }
+};
+
+// ==========================================
+// GET ALL VIDEOS
+// ==========================================
+
+export const getVideos = async (req, res) => {
+  try {
+    const videos = await Video.find().sort({ createdAt: -1 }).lean();
+
+    return res.json({
+      success: true,
+      videos,
+      count: videos.length,
+    });
+  } catch (error) {
+    console.error("GET VIDEOS ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get videos",
+    });
+  }
+};
+
+// ==========================================
+// GET SINGLE VIDEO
+// ==========================================
+
+export const getVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_VIDEO_ID",
+        message: "Invalid video ID",
+      });
+    }
+
+    const video = await Video.findById(id);
+
+    if (!video) {
+      return res.status(404).json({
+        success: false,
+        code: "VIDEO_NOT_FOUND",
+        message: "Video not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      video,
+    });
+  } catch (error) {
+    console.error("GET VIDEO ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get video",
+    });
+  }
+};
+
+// ==========================================
+// UPDATE VIDEO
+// ==========================================
+
+export const updateVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_VIDEO_ID",
+        message: "Invalid video ID",
+      });
+    }
+
+    const allowedFields = [
+      "title",
+      "videoUrl",
+      "sourceUrl",
+      "thumbnailUrl",
+      "duration",
+      "format",
+      "size",
+      "cbc",
+      "filename",
+    ];
+
+    const updates = {};
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    }
+
+    const video = await Video.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!video) {
+      return res.status(404).json({
+        success: false,
+        code: "VIDEO_NOT_FOUND",
+        message: "Video not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Video updated successfully",
+      video,
+    });
+  } catch (error) {
+    console.error("UPDATE VIDEO ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update video",
+    });
+  }
+};
+
+// ==========================================
+// DELETE VIDEO
+// ==========================================
+
+export const deleteVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_VIDEO_ID",
+        message: "Invalid video ID",
+      });
+    }
+
+    const video = await Video.findById(id);
+
+    if (!video) {
+      return res.status(404).json({
+        success: false,
+        code: "VIDEO_NOT_FOUND",
+        message: "Video not found",
+      });
+    }
+
+    // Delete physical local file if it exists
+    if (video.filename) {
+      const safeFilename = path.basename(video.filename);
+      const filePath = path.join(VIDEO_FOLDER, safeFilename);
+
+      try {
+        await fs.promises.unlink(filePath);
+        console.log("Deleted video file:", filePath);
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          console.warn("Could not delete video file:", error.message);
+        }
+      }
+    }
+
+    await Video.findByIdAndDelete(id);
+
+    return res.json({
+      success: true,
+      message: "Video deleted successfully",
+    });
+  } catch (error) {
+    console.error("DELETE VIDEO ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete video",
+    });
+  }
+};
