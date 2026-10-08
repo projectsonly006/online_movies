@@ -1,11 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Admin.css";
 import { api } from "../api";
-
-// ==========================================
-// EMPTY MOVIE
-// ==========================================
 
 const createEmptyMovie = () => ({
   title: "",
@@ -16,30 +12,15 @@ const createEmptyMovie = () => ({
 function Admin() {
   const navigate = useNavigate();
 
-  const pollingRef = useRef(null);
-
-  // ==========================================
-  // NUMBER OF MOVIES
-  // ==========================================
-
   const [movieCount, setMovieCount] = useState("");
-
   const [movies, setMovies] = useState([]);
-
-  const [currentMovieIndex, setCurrentMovieIndex] = useState(0);
-
   const [loading, setLoading] = useState(false);
 
   const [error, setError] = useState("");
-
   const [success, setSuccess] = useState("");
 
-  const [progress, setProgress] = useState(null);
-
   const [existingMovies, setExistingMovies] = useState([]);
-
   const [loadingMovies, setLoadingMovies] = useState(false);
-
   const [deletingMovieId, setDeletingMovieId] = useState(null);
 
   // ==========================================
@@ -61,114 +42,6 @@ function Admin() {
   }, [navigate]);
 
   // ==========================================
-  // DELETE MOVIE
-  // ==========================================
-
-  const handleDeleteMovie = async (movie) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${movie.title}"?\n\nThis will delete the movie from MongoDB and remove the video file from the server.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    const token = localStorage.getItem("adminToken");
-
-    if (!token) {
-      navigate("/admin/login", {
-        replace: true,
-      });
-
-      return;
-    }
-
-    try {
-      setDeletingMovieId(movie._id);
-
-      setError("");
-
-      setSuccess("");
-
-      const response = await fetch(api(`/api/videos/${movie._id}`), {
-        method: "DELETE",
-
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const data = await response.json();
-
-      // ==========================================
-      // AUTH ERROR
-      // ==========================================
-
-      if (response.status === 401 || response.status === 403) {
-        localStorage.removeItem("adminToken");
-
-        localStorage.removeItem("adminUser");
-
-        navigate("/admin/login", {
-          replace: true,
-        });
-
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to delete movie");
-      }
-
-      // ==========================================
-      // REMOVE FROM ADMIN LIST
-      // ==========================================
-
-      setExistingMovies((previousMovies) =>
-        previousMovies.filter(
-          (existingMovie) => existingMovie._id !== movie._id,
-        ),
-      );
-
-      setSuccess(`"${movie.title}" deleted successfully.`);
-    } catch (error) {
-      console.error("DELETE MOVIE ERROR:", error);
-
-      setError(error.message || "Failed to delete movie.");
-    } finally {
-      setDeletingMovieId(null);
-    }
-  };
-
-  // ==========================================
-  // STOP POLLING
-  // ==========================================
-
-  const stopPolling = () => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-
-      pollingRef.current = null;
-    }
-  };
-
-  // ==========================================
-  // LOGOUT
-  // ==========================================
-
-  const handleLogout = () => {
-    stopPolling();
-
-    localStorage.removeItem("adminToken");
-
-    localStorage.removeItem("adminUser");
-
-    navigate("/admin/login", {
-      replace: true,
-    });
-  };
-
-  // ==========================================
   // LOAD EXISTING MOVIES
   // ==========================================
 
@@ -177,7 +50,6 @@ function Admin() {
       setLoadingMovies(true);
 
       const response = await fetch(api("/api/videos"));
-
       const data = await response.json();
 
       if (!response.ok) {
@@ -187,11 +59,23 @@ function Admin() {
       setExistingMovies(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("LOAD MOVIES ERROR:", error);
-
       setError(error.message || "Failed to load existing movies.");
     } finally {
       setLoadingMovies(false);
     }
+  };
+
+  // ==========================================
+  // LOGOUT
+  // ==========================================
+
+  const handleLogout = () => {
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("adminUser");
+
+    navigate("/admin/login", {
+      replace: true,
+    });
   };
 
   // ==========================================
@@ -200,41 +84,27 @@ function Admin() {
 
   const createMovieSlots = () => {
     setError("");
-
     setSuccess("");
 
-    setProgress(null);
-
     const count = Number(movieCount);
-
-    // ========================================
-    // VALIDATION
-    // ========================================
 
     if (!Number.isInteger(count) || count < 1) {
       setError("Please enter a valid number of movies.");
       return;
     }
 
-    // Change this if you want a different maximum.
     if (count > 500) {
       setError("You can add a maximum of 500 movies at once.");
       return;
     }
 
-    // ========================================
-    // CREATE EXACT NUMBER OF MOVIES
-    // ========================================
-
     const newMovies = Array.from({ length: count }, () => createEmptyMovie());
 
     setMovies(newMovies);
-
-    setCurrentMovieIndex(0);
   };
 
   // ==========================================
-  // UPDATE MOVIE FIELD
+  // UPDATE MOVIE
   // ==========================================
 
   const updateMovie = (index, field, value) => {
@@ -256,212 +126,21 @@ function Admin() {
 
   const resetForm = () => {
     setMovieCount("");
-
     setMovies([]);
-
-    setCurrentMovieIndex(0);
-
-    setProgress(null);
   };
 
   // ==========================================
-  // CREATE JOB ID
+  // DELETE MOVIE
   // ==========================================
 
-  const createJobId = () => {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      return crypto.randomUUID();
+  const handleDeleteMovie = async (movie) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${movie.title}"?`,
+    );
+
+    if (!confirmed) {
+      return;
     }
-
-    return `job-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-  };
-
-  // ==========================================
-  // DOWNLOAD ONE MOVIE
-  // ==========================================
-
-  const downloadMovie = async (movie, index, token) => {
-    const jobId = createJobId();
-
-    setCurrentMovieIndex(index);
-
-    setProgress({
-      status: "starting",
-
-      percentage: 0,
-
-      downloadedBytes: 0,
-
-      totalBytes: 0,
-
-      downloadedMB: 0,
-
-      totalMB: 0,
-
-      speedMBps: 0,
-
-      filename: "",
-    });
-
-    const response = await fetch(api("/api/videos/create-watchable"), {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-
-        Authorization: `Bearer ${token}`,
-      },
-
-      body: JSON.stringify({
-        signedFileUrl: movie.url.trim(),
-
-        sourceUrl: movie.url.trim(),
-
-        title: movie.title.trim(),
-
-        cbc: movie.cbc.trim(),
-
-        jobId,
-      }),
-    });
-
-    const data = await response.json();
-
-    console.log(`CREATE MOVIE ${index + 1} RESPONSE:`, data);
-
-    // ========================================
-    // AUTH ERROR
-    // ========================================
-
-    if (response.status === 401 || response.status === 403) {
-      localStorage.removeItem("adminToken");
-
-      localStorage.removeItem("adminUser");
-
-      navigate("/admin/login", {
-        replace: true,
-      });
-
-      throw new Error("Admin session expired");
-    }
-
-    // ========================================
-    // SERVER ERROR
-    // ========================================
-
-    if (!response.ok) {
-      throw new Error(data.message || `Failed to add movie ${index + 1}`);
-    }
-
-    // ========================================
-    // WAIT FOR DOWNLOAD
-    // ========================================
-
-    return new Promise((resolve, reject) => {
-      let finished = false;
-
-      const checkProgress = async () => {
-        try {
-          const progressResponse = await fetch(
-            api(`/api/videos/download-progress/${data.jobId || jobId}`),
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            },
-          );
-
-          const progressData = await progressResponse.json();
-
-          // ======================================
-          // AUTH ERROR
-          // ======================================
-
-          if (
-            progressResponse.status === 401 ||
-            progressResponse.status === 403
-          ) {
-            stopPolling();
-
-            localStorage.removeItem("adminToken");
-
-            localStorage.removeItem("adminUser");
-
-            navigate("/admin/login", {
-              replace: true,
-            });
-
-            if (!finished) {
-              finished = true;
-
-              reject(new Error("Admin session expired"));
-            }
-
-            return;
-          }
-
-          if (!progressResponse.ok) {
-            return;
-          }
-
-          setProgress(progressData);
-
-          // ======================================
-          // MOVIE COMPLETED
-          // ======================================
-
-          if (progressData.status === "completed" && progressData.videoId) {
-            stopPolling();
-
-            if (!finished) {
-              finished = true;
-
-              resolve(progressData);
-            }
-
-            return;
-          }
-
-          // ======================================
-          // MOVIE FAILED
-          // ======================================
-
-          if (progressData.status === "error") {
-            stopPolling();
-
-            if (!finished) {
-              finished = true;
-
-              reject(
-                new Error(
-                  progressData.error || `Movie ${index + 1} download failed`,
-                ),
-              );
-            }
-          }
-        } catch (error) {
-          console.error("PROGRESS ERROR:", error);
-        }
-      };
-
-      checkProgress();
-
-      pollingRef.current = setInterval(checkProgress, 1000);
-    });
-  };
-
-  // ==========================================
-  // SUBMIT ALL MOVIES
-  // ==========================================
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    setError("");
-
-    setSuccess("");
-
-    setProgress(null);
 
     const token = localStorage.getItem("adminToken");
 
@@ -473,9 +152,70 @@ function Admin() {
       return;
     }
 
-    // ==========================================
-    // MAKE SURE SLOTS EXIST
-    // ==========================================
+    try {
+      setDeletingMovieId(movie._id);
+      setError("");
+      setSuccess("");
+
+      const response = await fetch(api(`/api/videos/${movie._id}`), {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem("adminToken");
+        localStorage.removeItem("adminUser");
+
+        navigate("/admin/login", {
+          replace: true,
+        });
+
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to delete movie");
+      }
+
+      setExistingMovies((previousMovies) =>
+        previousMovies.filter(
+          (existingMovie) => existingMovie._id !== movie._id,
+        ),
+      );
+
+      setSuccess(`"${movie.title}" deleted successfully.`);
+    } catch (error) {
+      console.error("DELETE MOVIE ERROR:", error);
+
+      setError(error.message || "Failed to delete movie.");
+    } finally {
+      setDeletingMovieId(null);
+    }
+  };
+
+  // ==========================================
+  // ADD MOVIES
+  // ==========================================
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    setError("");
+    setSuccess("");
+
+    const token = localStorage.getItem("adminToken");
+
+    if (!token) {
+      navigate("/admin/login", {
+        replace: true,
+      });
+
+      return;
+    }
 
     if (movies.length === 0) {
       setError("Please enter the number of movies first.");
@@ -483,187 +223,119 @@ function Admin() {
       return;
     }
 
-    // ==========================================
-    // MOVIE 1 IS REQUIRED
-    // ==========================================
-
-    const firstMovie = movies[0];
-
-    if (!firstMovie.title.trim()) {
-      setError("Movie 1 title is required.");
-
-      return;
-    }
-
-    if (!firstMovie.url.trim()) {
-      setError("Movie 1 video URL is required.");
-
-      return;
-    }
-
-    if (!firstMovie.cbc.trim()) {
-      setError("Movie 1 CBC rating is required.");
-
-      return;
-    }
-
-    // ==========================================
-    // FIND FILLED MOVIES
-    // ==========================================
+    // ========================================
+    // VALIDATE MOVIES
+    // ========================================
 
     const moviesToAdd = [];
 
     for (let index = 0; index < movies.length; index++) {
       const movie = movies[index];
 
-      const hasTitle = movie.title.trim() !== "";
+      const title = movie.title.trim();
+      const url = movie.url.trim();
+      const cbc = movie.cbc.trim();
 
-      const hasUrl = movie.url.trim() !== "";
+      const hasAnything = title !== "" || url !== "" || cbc !== "";
 
-      const hasCbc = movie.cbc.trim() !== "";
-
-      const hasAnything = hasTitle || hasUrl || hasCbc;
-
-      // ========================================
-      // EMPTY OPTIONAL SLOT
-      // ========================================
-
+      // Empty optional slot
       if (!hasAnything) {
         continue;
       }
 
-      // ========================================
-      // VALIDATE OPTIONAL MOVIE
-      // ========================================
+      if (!title) {
+        setError(`Movie ${index + 1}: title is required.`);
+        return;
+      }
 
-      if (index > 0) {
-        if (!hasTitle) {
-          setError(`Movie ${index + 1}: please enter a title.`);
+      if (!url) {
+        setError(`Movie ${index + 1}: video URL is required.`);
+        return;
+      }
 
-          return;
-        }
-
-        if (!hasUrl) {
-          setError(`Movie ${index + 1}: please enter a video URL.`);
-
-          return;
-        }
-
-        if (!hasCbc) {
-          setError(`Movie ${index + 1}: please select a CBC rating.`);
-
-          return;
-        }
+      if (!cbc) {
+        setError(`Movie ${index + 1}: CBC rating is required.`);
+        return;
       }
 
       moviesToAdd.push({
-        ...movie,
-
-        index,
+        title,
+        url,
+        cbc,
       });
     }
 
-    // ==========================================
-    // SAFETY CHECK
-    // ==========================================
-
     if (moviesToAdd.length === 0) {
       setError("Please add at least one movie.");
-
       return;
     }
 
+    // ========================================
+    // ADD MOVIES
+    // ========================================
+
     setLoading(true);
 
+    let addedCount = 0;
+
     try {
-      // ========================================
-      // ADD MOVIES ONE BY ONE
-      // ========================================
+      for (const movie of moviesToAdd) {
+        const response = await fetch(api("/api/videos/create-watchable"), {
+          method: "POST",
 
-      for (
-        let moviePosition = 0;
-        moviePosition < moviesToAdd.length;
-        moviePosition++
-      ) {
-        const movie = moviesToAdd[moviePosition];
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
 
-        console.log(
-          `ADDING MOVIE ${moviePosition + 1} OF ${moviesToAdd.length}`,
-        );
-
-        setCurrentMovieIndex(movie.index);
-
-        setProgress({
-          status: "starting",
-
-          percentage: 0,
-
-          downloadedBytes: 0,
-
-          totalBytes: 0,
-
-          downloadedMB: 0,
-
-          totalMB: 0,
-
-          speedMBps: 0,
-
-          filename: "",
-
-          movieNumber: moviePosition + 1,
-
-          totalMovies: moviesToAdd.length,
+          body: JSON.stringify({
+            signedFileUrl: movie.url,
+            sourceUrl: movie.url,
+            title: movie.title,
+            cbc: movie.cbc,
+          }),
         });
 
-        await downloadMovie(movie, movie.index, token);
+        const data = await response.json();
+
+        console.log("CREATE MOVIE RESPONSE:", data);
+
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem("adminToken");
+          localStorage.removeItem("adminUser");
+
+          navigate("/admin/login", {
+            replace: true,
+          });
+
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(data.message || `Failed to add "${movie.title}"`);
+        }
+
+        addedCount++;
       }
 
-      // ========================================
-      // ALL MOVIES COMPLETE
-      // ========================================
-
-      setLoading(false);
-
       setSuccess(
-        `${moviesToAdd.length} ${
-          moviesToAdd.length === 1 ? "movie" : "movies"
-        } added successfully!`,
+        `${addedCount} ${
+          addedCount === 1 ? "movie" : "movies"
+        } added successfully.`,
       );
 
       resetForm();
+
+      // Refresh library immediately
+      await loadExistingMovies();
     } catch (error) {
       console.error("CREATE MOVIES ERROR:", error);
 
-      setLoading(false);
-
       setError(error.message || "Failed to add movies.");
+    } finally {
+      setLoading(false);
     }
   };
-
-  // ==========================================
-  // CLEANUP
-  // ==========================================
-
-  useEffect(() => {
-    return () => {
-      stopPolling();
-    };
-  }, []);
-
-  // ==========================================
-  // PROGRESS
-  // ==========================================
-
-  const percentage = Math.min(
-    100,
-    Math.max(0, Number(progress?.percentage || 0)),
-  );
-
-  const downloadedMB = progress?.downloadedMB ?? 0;
-
-  const totalMB = progress?.totalMB ?? 0;
-
-  const speed = progress?.speedMBps ?? 0;
 
   // ==========================================
   // ADMIN USER
@@ -684,17 +356,12 @@ function Admin() {
   return (
     <main className="admin-page">
       <div className="admin-container">
-        {/* ======================================
-            HEADER
-        ====================================== */}
-
         <header className="admin-header">
           <div className="admin-brand">
             <div className="admin-logo">▶</div>
 
             <div>
               <h1>Admin Dashboard</h1>
-
               <p>Manage your movie library</p>
             </div>
           </div>
@@ -717,7 +384,7 @@ function Admin() {
         </header>
 
         {/* ======================================
-            CREATE MOVIES
+            ADD MOVIES
         ====================================== */}
 
         <section className="admin-card">
@@ -727,13 +394,9 @@ function Admin() {
 
               <h2>Add Movies</h2>
 
-              <p>Choose how many movie slots you want.</p>
+              <p>Add movies using their direct video URL.</p>
             </div>
           </div>
-
-          {/* ====================================
-              NUMBER OF MOVIES
-          ==================================== */}
 
           {!loading && movies.length === 0 && (
             <div className="movie-count-section">
@@ -768,10 +431,6 @@ function Admin() {
             </div>
           )}
 
-          {/* ====================================
-              MOVIE FORM
-          ==================================== */}
-
           {movies.length > 0 && (
             <form className="admin-form" onSubmit={handleSubmit}>
               <div className="movie-count-info">
@@ -786,14 +445,9 @@ function Admin() {
                     if (loading) return;
 
                     setMovies([]);
-
                     setMovieCount("");
-
                     setError("");
-
                     setSuccess("");
-
-                    setProgress(null);
                   }}
                   disabled={loading}
                 >
@@ -801,133 +455,79 @@ function Admin() {
                 </button>
               </div>
 
-              {/* ==================================
-                  MOVIE SLOTS
-              ================================== */}
-
               <div className="movie-slots">
-                {movies.map((movie, index) => {
-                  const isRequired = index === 0;
-
-                  const isActive = currentMovieIndex === index && loading;
-
-                  return (
-                    <div
-                      className={`movie-slot ${
-                        isActive ? "movie-slot-active" : ""
-                      }`}
-                      key={index}
-                    >
-                      {/* SLOT HEADER */}
-
-                      <div className="movie-slot-header">
-                        <div>
-                          <span className="movie-slot-number">
-                            Movie {index + 1}
-                          </span>
-
-                          <h3>
-                            {isRequired ? "Required Movie" : "Optional Movie"}
-                          </h3>
-                        </div>
-
-                        {isActive && (
-                          <span className="movie-slot-status">Adding...</span>
-                        )}
-                      </div>
-
-                      {/* TITLE */}
-
-                      <div className="form-group">
-                        <label htmlFor={`movie-title-${index}`}>
-                          Movie Title
-                          {isRequired && (
-                            <span className="required-star">*</span>
-                          )}
-                        </label>
-
-                        <input
-                          id={`movie-title-${index}`}
-                          type="text"
-                          value={movie.title}
-                          onChange={(e) =>
-                            updateMovie(index, "title", e.target.value)
-                          }
-                          placeholder={
-                            isRequired
-                              ? "Enter movie title"
-                              : "Optional movie title"
-                          }
-                          disabled={loading}
-                          required={isRequired}
-                        />
-                      </div>
-
-                      {/* URL */}
-
-                      <div className="form-group">
-                        <label htmlFor={`movie-url-${index}`}>
-                          Video URL
-                          {isRequired && (
-                            <span className="required-star">*</span>
-                          )}
-                        </label>
-
-                        <input
-                          id={`movie-url-${index}`}
-                          type="url"
-                          value={movie.url}
-                          onChange={(e) =>
-                            updateMovie(index, "url", e.target.value)
-                          }
-                          placeholder="Paste the direct signed video URL"
-                          disabled={loading}
-                          required={isRequired}
-                        />
-
-                        <span className="input-help">
-                          Use the direct signed video download URL.
+                {movies.map((movie, index) => (
+                  <div className="movie-slot" key={index}>
+                    <div className="movie-slot-header">
+                      <div>
+                        <span className="movie-slot-number">
+                          Movie {index + 1}
                         </span>
-                      </div>
 
-                      {/* CBC */}
-
-                      <div className="form-group">
-                        <label htmlFor={`movie-cbc-${index}`}>
-                          CBC Rating
-                          {isRequired && (
-                            <span className="required-star">*</span>
-                          )}
-                        </label>
-
-                        <select
-                          id={`movie-cbc-${index}`}
-                          value={movie.cbc}
-                          onChange={(e) =>
-                            updateMovie(index, "cbc", e.target.value)
-                          }
-                          disabled={loading}
-                          required={isRequired}
-                        >
-                          <option value="">Select rating</option>
-
-                          <option value="U">U</option>
-
-                          <option value="U/A">U/A</option>
-
-                          <option value="A">A</option>
-
-                          <option value="R">R</option>
-                        </select>
+                        <h3>
+                          {index === 0 ? "Required Movie" : "Optional Movie"}
+                        </h3>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
 
-              {/* ==================================
-                  SUBMIT
-              ================================== */}
+                    <div className="form-group">
+                      <label htmlFor={`movie-title-${index}`}>
+                        Movie Title
+                      </label>
+
+                      <input
+                        id={`movie-title-${index}`}
+                        type="text"
+                        value={movie.title}
+                        onChange={(e) =>
+                          updateMovie(index, "title", e.target.value)
+                        }
+                        placeholder="Enter movie title"
+                        disabled={loading}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor={`movie-url-${index}`}>Video URL</label>
+
+                      <input
+                        id={`movie-url-${index}`}
+                        type="url"
+                        value={movie.url}
+                        onChange={(e) =>
+                          updateMovie(index, "url", e.target.value)
+                        }
+                        placeholder="Paste direct signed video URL"
+                        disabled={loading}
+                      />
+
+                      <span className="input-help">
+                        Use the direct signed video download URL.
+                      </span>
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor={`movie-cbc-${index}`}>CBC Rating</label>
+
+                      <select
+                        id={`movie-cbc-${index}`}
+                        value={movie.cbc}
+                        onChange={(e) =>
+                          updateMovie(index, "cbc", e.target.value)
+                        }
+                        disabled={loading}
+                      >
+                        <option value="">Select rating</option>
+
+                        <option value="U">U</option>
+                        <option value="U/A">U/A</option>
+                        <option value="A">A</option>
+                        <option value="R">R</option>
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
               <button
                 className="add-movie-button"
@@ -936,7 +536,7 @@ function Admin() {
               >
                 {loading ? (
                   <>
-                    <span className="button-spinner"></span>
+                    <span className="button-spinner" />
                     Adding Movies...
                   </>
                 ) : (
@@ -949,71 +549,14 @@ function Admin() {
             </form>
           )}
 
-          {/* ======================================
-              PROGRESS
-          ====================================== */}
-
-          {loading && progress && (
-            <div className="admin-progress">
-              <div className="progress-header">
-                <div>
-                  <h3>Adding Movie {currentMovieIndex + 1}</h3>
-
-                  <span>
-                    {progress.status === "starting"
-                      ? "Starting download..."
-                      : progress.status === "downloading"
-                        ? "Downloading..."
-                        : progress.status === "processing"
-                          ? "Processing video..."
-                          : progress.status}
-                  </span>
-                </div>
-
-                <strong>{percentage.toFixed(1)}%</strong>
-              </div>
-
-              <div className="progress-track">
-                <div
-                  className="progress-fill"
-                  style={{
-                    width: `${percentage}%`,
-                  }}
-                />
-              </div>
-
-              <div className="progress-stats">
-                <span>
-                  Downloaded: <strong>{downloadedMB} MB</strong>
-                </span>
-
-                <span>
-                  Total: <strong>{totalMB} MB</strong>
-                </span>
-
-                <span>
-                  Speed: <strong>{speed} MB/s</strong>
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* ======================================
-              ERROR
-          ====================================== */}
-
           {error && <div className="admin-message error">{error}</div>}
-
-          {/* ======================================
-              SUCCESS
-          ====================================== */}
 
           {success && <div className="admin-message success">{success}</div>}
         </section>
 
         {/* ======================================
-    EXISTING MOVIES
-====================================== */}
+            EXISTING MOVIES
+        ====================================== */}
 
         <section className="admin-card">
           <div className="admin-card-header">
@@ -1061,7 +604,7 @@ function Admin() {
                     >
                       {isDeleting ? (
                         <>
-                          <span className="button-spinner"></span>
+                          <span className="button-spinner" />
                           Deleting...
                         </>
                       ) : (
@@ -1074,10 +617,6 @@ function Admin() {
             </div>
           )}
         </section>
-
-        {/* ======================================
-            BACK HOME
-        ====================================== */}
 
         <button
           className="back-home-button"
