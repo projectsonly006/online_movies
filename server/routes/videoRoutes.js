@@ -1,7 +1,7 @@
 import express from "express";
 
 import {
-  uploadMiddleware,
+  upload,
   uploadVideo,
   createVideoFromUrl,
   createLocalVideo,
@@ -18,22 +18,20 @@ import { adminAuth } from "../middleware/adminAuth.js";
 
 const router = express.Router();
 
-// ==========================================
+// ======================================================
 // ADMIN
-// ==========================================
+// ======================================================
 
 // Upload video
-router.post("/upload", adminAuth, uploadMiddleware, uploadVideo);
+router.post("/upload", adminAuth, upload.single("video"), uploadVideo);
 
 // Create video from external URL
 router.post("/create-url", adminAuth, createVideoFromUrl);
 
-// Create video from an already-existing
-// local file
+// Create video from an existing local file
 router.post("/create-local", adminAuth, createLocalVideo);
 
-// WeTransfer → download → save to /videos
-// → MongoDB
+// WeTransfer → download → /videos → MongoDB
 router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
 
 // Download progress
@@ -45,15 +43,14 @@ router.put("/:id", adminAuth, updateVideo);
 // Delete video
 router.delete("/:id", adminAuth, deleteVideo);
 
-// ==========================================
+// ======================================================
 // PUBLIC
-// ==========================================
+// ======================================================
 
 // Get all videos
 router.get("/", getVideos);
 
-// IMPORTANT:
-// Keep /stream/:id BEFORE /:id
+// IMPORTANT: put stream before /:id
 router.get("/stream/:id", streamVideo);
 
 // Get single video
