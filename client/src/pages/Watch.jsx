@@ -10,6 +10,7 @@ function Watch() {
   const [video, setVideo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [videoExpired, setVideoExpired] = useState(false);
 
   // ==========================================
   // VIDEO PLAYER STATE
@@ -38,8 +39,10 @@ function Watch() {
       try {
         setLoading(true);
         setError("");
+        setVideoExpired(false);
 
         const response = await fetch(api(`/api/videos/${id}`));
+
         const data = await response.json();
 
         console.log("VIDEO DATA:", data);
@@ -49,6 +52,25 @@ function Watch() {
         }
 
         setVideo(data);
+
+        // ==========================================
+        // CHECK IF ACTUAL VIDEO FILE EXISTS
+        // ==========================================
+
+        const availabilityResponse = await fetch(
+          api(`/api/videos/availability/${id}`),
+        );
+
+        const availabilityData = await availabilityResponse.json();
+
+        console.log("VIDEO AVAILABILITY:", availabilityData);
+
+        if (
+          availabilityResponse.status === 410 ||
+          availabilityData.code === "VIDEO_LINK_EXPIRED"
+        ) {
+          setVideoExpired(true);
+        }
       } catch (error) {
         console.error("FETCH VIDEO ERROR:", error);
 
@@ -99,6 +121,55 @@ function Watch() {
 
     setShowControls(false);
     setShowSettings(false);
+  };
+
+  const handleVideoError = async () => {
+    const videoElement = videoRef.current;
+
+    console.error("VIDEO PLAYER ERROR:", {
+      code: videoElement?.error?.code,
+      message: videoElement?.error?.message,
+      currentSrc: videoElement?.currentSrc,
+    });
+
+    // ==========================================
+    // CHECK BACKEND
+    // ==========================================
+
+    try {
+      const response = await fetch(api(`/api/videos/availability/${id}`));
+
+      const data = await response.json();
+
+      console.error("VIDEO AVAILABILITY AFTER PLAYER ERROR:", data);
+
+      if (response.status === 410 || data.code === "VIDEO_LINK_EXPIRED") {
+        setVideoExpired(true);
+        setPlaying(false);
+        return;
+      }
+    } catch (error) {
+      console.error("AVAILABILITY CHECK ERROR:", error);
+    }
+
+    // ==========================================
+    // FALLBACK
+    // ==========================================
+
+    const mediaError = videoElement?.error;
+
+    if (
+      mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
+      mediaError?.code === MediaError.MEDIA_ERR_NETWORK
+    ) {
+      setError(
+        "The video could not be loaded. Please contact the admin if the problem continues.",
+      );
+    } else {
+      setError("Unable to play this video.");
+    }
+
+    setPlaying(false);
   };
 
   // ==========================================
@@ -420,6 +491,42 @@ function Watch() {
   }
 
   // ==========================================
+  // VIDEO EXPIRED / NO LONGER AVAILABLE
+  // ==========================================
+
+  if (videoExpired) {
+    return (
+      <main className="watch-page">
+        <div className="watch-container">
+          <header className="watch-header">
+            <button className="back-button" onClick={() => navigate("/")}>
+              ←<span>Back</span>
+            </button>
+
+            <div className="watch-brand">
+              <div className="watch-logo">▶</div>
+            </div>
+          </header>
+
+          <section className="watch-card">
+            <div className="watch-error video-expired-error">
+              <div className="error-circle">!</div>
+
+              <h2>Video Link Expired</h2>
+
+              <p>This video is no longer available.</p>
+
+              <p>Please contact the admin to restore or update the video.</p>
+
+              <button onClick={() => navigate("/")}>← Back to Home</button>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  // ==========================================
   // ERROR
   // ==========================================
 
@@ -521,6 +628,7 @@ function Watch() {
               onLoadedMetadata={handleLoadedMetadata}
               onTimeUpdate={handleTimeUpdate}
               onEnded={handleVideoEnded}
+              onError={handleVideoError}
               onClick={() => {
                 togglePlay();
                 showPlayerControls();

@@ -182,16 +182,11 @@ function Home() {
             <div className="video-grid">
               {videos.map((item) => (
                 <article
-                  className="video-library-card"
+                  className={`video-library-card ${
+                    item.available === false ? "video-unavailable" : ""
+                  }`}
                   key={item._id}
                   onClick={() => navigate(`/watch/${item._id}`)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      navigate(`/watch/${item._id}`);
-                    }
-                  }}
                 >
                   {/* THUMBNAIL */}
 
@@ -204,6 +199,12 @@ function Home() {
                     ) : (
                       <div className="thumbnail-placeholder">
                         <span>▶</span>
+                      </div>
+                    )}
+
+                    {item.available === false && (
+                      <div className="expired-overlay">
+                        <span>Video unavailable</span>
                       </div>
                     )}
 

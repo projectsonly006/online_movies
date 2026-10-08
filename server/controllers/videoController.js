@@ -314,12 +314,47 @@ export const createLocalVideo = async (req, res) => {
 export const getVideos = async (req, res) => {
   try {
     const videos = await Video.find()
-      .select("_id title thumbnailUrl duration format size cbc createdAt")
+      .select(
+        "_id title thumbnailUrl duration format size cbc filename createdAt",
+      )
       .sort({
         createdAt: -1,
       });
 
-    return res.json(videos);
+    const result = await Promise.all(
+      videos.map(async (video) => {
+        let available = false;
+
+        if (video.filename) {
+          const safeFilename = path.basename(video.filename);
+
+          const filePath = path.join(VIDEO_FOLDER, safeFilename);
+
+          try {
+            const stats = await fs.promises.stat(filePath);
+
+            available = stats.isFile() && stats.size > 0;
+          } catch {
+            available = false;
+          }
+        }
+
+        return {
+          _id: video._id,
+          title: video.title,
+          thumbnailUrl: video.thumbnailUrl,
+          duration: video.duration,
+          format: video.format,
+          size: video.size,
+          cbc: video.cbc,
+          createdAt: video.createdAt,
+
+          available,
+        };
+      }),
+    );
+
+    return res.json(result);
   } catch (error) {
     console.error("GET VIDEOS ERROR:", error);
 
@@ -1162,6 +1197,8 @@ export const streamVideo = async (req, res) => {
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
+        success: false,
+        code: "INVALID_VIDEO_ID",
         message: "Invalid video ID",
       });
     }
@@ -1170,6 +1207,8 @@ export const streamVideo = async (req, res) => {
 
     if (!video) {
       return res.status(404).json({
+        success: false,
+        code: "VIDEO_NOT_FOUND",
         message: "Video not found",
       });
     }
@@ -1183,37 +1222,68 @@ export const streamVideo = async (req, res) => {
 
         filename = decodeURIComponent(path.basename(url.pathname));
       } catch {
-        return res.status(400).json({
-          message: "Invalid stored video URL",
+        return res.status(410).json({
+          success: false,
+          code: "VIDEO_LINK_EXPIRED",
+          message: "This video link has expired. Please contact the admin.",
         });
       }
     }
 
     if (!filename) {
-      return res.status(404).json({
-        message: "Video filename not found",
+      return res.status(410).json({
+        success: false,
+        code: "VIDEO_LINK_EXPIRED",
+        message: "This video link has expired. Please contact the admin.",
       });
     }
 
+    // Never allow path traversal
     filename = path.basename(filename);
 
     const filePath = path.join(VIDEO_FOLDER, filename);
 
+    // ==========================================
+    // FILE NO LONGER EXISTS
+    // ==========================================
+
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({
-        message: "Video file not found",
+      console.warn("VIDEO FILE MISSING");
+      console.warn("Video ID:", id);
+      console.warn("Title:", video.title);
+      console.warn("Filename:", filename);
+      console.warn("Path:", filePath);
+
+      return res.status(410).json({
+        success: false,
+        code: "VIDEO_LINK_EXPIRED",
+        message: "This video is no longer available. Please contact the admin.",
       });
     }
 
     const stat = await fs.promises.stat(filePath);
 
     if (!stat.isFile()) {
-      return res.status(400).json({
-        message: "Video path is not a file",
+      return res.status(410).json({
+        success: false,
+        code: "VIDEO_LINK_EXPIRED",
+        message: "This video is no longer available. Please contact the admin.",
       });
     }
 
     const fileSize = stat.size;
+
+    if (fileSize <= 0) {
+      return res.status(410).json({
+        success: false,
+        code: "VIDEO_LINK_EXPIRED",
+        message: "This video is no longer available. Please contact the admin.",
+      });
+    }
+
+    // ==========================================
+    // MIME TYPE
+    // ==========================================
 
     const extension = path.extname(filename).replace(".", "").toLowerCase();
 
@@ -1226,7 +1296,18 @@ export const streamVideo = async (req, res) => {
       m4v: "video/x-m4v",
     };
 
-    const contentType = mimeTypes[extension] || "video/mp4";
+    const contentType = mimeTypes[extension];
+
+    // Unsupported format
+    if (!contentType) {
+      console.warn("UNSUPPORTED VIDEO FORMAT:", extension);
+
+      return res.status(415).json({
+        success: false,
+        code: "VIDEO_FORMAT_NOT_SUPPORTED",
+        message: "This video format is not supported.",
+      });
+    }
 
     const range = req.headers.range;
 
@@ -1237,13 +1318,24 @@ export const streamVideo = async (req, res) => {
     if (!range) {
       res.writeHead(200, {
         "Content-Length": fileSize,
-
         "Content-Type": contentType,
-
         "Accept-Ranges": "bytes",
+        "Cache-Control": "no-cache",
       });
 
-      fs.createReadStream(filePath).pipe(res);
+      const stream = fs.createReadStream(filePath);
+
+      stream.on("error", (error) => {
+        console.error("VIDEO STREAM ERROR:", error);
+
+        if (!res.headersSent) {
+          res.status(500).end();
+        } else {
+          res.destroy(error);
+        }
+      });
+
+      stream.pipe(res);
 
       return;
     }
@@ -1255,7 +1347,9 @@ export const streamVideo = async (req, res) => {
     const rangeMatch = range.match(/bytes=(\d*)-(\d*)/);
 
     if (!rangeMatch) {
-      return res.status(416).json({
+      return res.status(416).set("Content-Range", `bytes */${fileSize}`).json({
+        success: false,
+        code: "INVALID_RANGE",
         message: "Invalid range request",
       });
     }
@@ -1264,7 +1358,7 @@ export const streamVideo = async (req, res) => {
 
     let end = rangeMatch[2] !== "" ? parseInt(rangeMatch[2], 10) : fileSize - 1;
 
-    // Handle suffix range: bytes=-500
+    // bytes=-500
     if (rangeMatch[1] === "" && rangeMatch[2] !== "") {
       const suffixLength = parseInt(rangeMatch[2], 10);
 
@@ -1281,6 +1375,8 @@ export const streamVideo = async (req, res) => {
       end < start
     ) {
       return res.status(416).set("Content-Range", `bytes */${fileSize}`).json({
+        success: false,
+        code: "INVALID_RANGE",
         message: "Requested range not satisfiable",
       });
     }
@@ -1291,12 +1387,10 @@ export const streamVideo = async (req, res) => {
 
     res.writeHead(206, {
       "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-
       "Accept-Ranges": "bytes",
-
       "Content-Length": chunkSize,
-
       "Content-Type": contentType,
+      "Cache-Control": "no-cache",
     });
 
     const stream = fs.createReadStream(filePath, {
@@ -1305,7 +1399,7 @@ export const streamVideo = async (req, res) => {
     });
 
     stream.on("error", (error) => {
-      console.error("VIDEO STREAM ERROR:", error);
+      console.error("VIDEO RANGE STREAM ERROR:", error);
 
       if (!res.headersSent) {
         res.status(500).end();
@@ -1320,10 +1414,100 @@ export const streamVideo = async (req, res) => {
 
     if (!res.headersSent) {
       return res.status(500).json({
+        success: false,
+        code: "VIDEO_STREAM_ERROR",
         message: "Failed to stream video",
       });
     }
 
     res.end();
+  }
+};
+
+// ==========================================
+// CHECK VIDEO AVAILABILITY
+// ==========================================
+
+export const checkVideoAvailability = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        available: false,
+        code: "INVALID_VIDEO_ID",
+        message: "Invalid video ID",
+      });
+    }
+
+    const video = await Video.findById(id);
+
+    if (!video) {
+      return res.status(404).json({
+        available: false,
+        code: "VIDEO_NOT_FOUND",
+        message: "Video not found",
+      });
+    }
+
+    let filename = video.filename;
+
+    if (!filename && video.videoUrl) {
+      try {
+        const url = new URL(video.videoUrl);
+
+        filename = decodeURIComponent(path.basename(url.pathname));
+      } catch {
+        return res.status(410).json({
+          available: false,
+          code: "VIDEO_LINK_EXPIRED",
+          message: "This video link has expired. Please contact the admin.",
+        });
+      }
+    }
+
+    if (!filename) {
+      return res.status(410).json({
+        available: false,
+        code: "VIDEO_LINK_EXPIRED",
+        message: "This video link has expired. Please contact the admin.",
+      });
+    }
+
+    filename = path.basename(filename);
+
+    const filePath = path.join(VIDEO_FOLDER, filename);
+
+    try {
+      const stats = await fs.promises.stat(filePath);
+
+      if (!stats.isFile() || stats.size <= 0) {
+        throw new Error("Invalid video file");
+      }
+
+      return res.json({
+        available: true,
+        code: "VIDEO_AVAILABLE",
+        message: "Video is available",
+      });
+    } catch {
+      console.warn("VIDEO AVAILABILITY CHECK FAILED");
+      console.warn("Video ID:", id);
+      console.warn("Filename:", filename);
+
+      return res.status(410).json({
+        available: false,
+        code: "VIDEO_LINK_EXPIRED",
+        message: "This video is no longer available. Please contact the admin.",
+      });
+    }
+  } catch (error) {
+    console.error("CHECK VIDEO AVAILABILITY ERROR:", error);
+
+    return res.status(500).json({
+      available: false,
+      code: "VIDEO_AVAILABILITY_ERROR",
+      message: "Unable to check video availability.",
+    });
   }
 };

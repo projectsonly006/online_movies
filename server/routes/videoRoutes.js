@@ -12,6 +12,7 @@ import {
   getDownloadProgress,
   streamVideo,
   deleteVideo,
+  checkVideoAvailability,
 } from "../controllers/videoController.js";
 
 import { adminAuth } from "../middleware/adminAuth.js";
@@ -60,6 +61,12 @@ router.get("/", getVideos);
 // ==========================================
 
 router.get("/stream/:id", streamVideo);
+
+// ==========================================
+// PUBLIC - VIDEO AVAILABILITY
+// ==========================================
+
+router.get("/availability/:id", checkVideoAvailability);
 
 // ==========================================
 // PUBLIC - SINGLE VIDEo

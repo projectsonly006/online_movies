@@ -1014,6 +1014,104 @@ body {
   cursor: not-allowed;
 }
 
+.video-expired-error {
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.video-expired-error .error-circle {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+
+  font-size: 34px;
+  font-weight: 800;
+
+  margin-bottom: 24px;
+}
+
+.video-expired-error h2 {
+  margin: 0 0 12px;
+
+  font-size: 28px;
+  font-weight: 700;
+
+  color: #ffffff;
+}
+
+.video-expired-error p {
+  margin: 4px 0;
+
+  color: #9ca3af;
+
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.video-expired-error button {
+  margin-top: 24px;
+
+  border: none;
+  border-radius: 10px;
+
+  padding: 12px 20px;
+
+  background: #ffffff;
+  color: #111827;
+
+  font-size: 14px;
+  font-weight: 600;
+
+  cursor: pointer;
+
+  transition: 0.2s ease;
+}
+
+.video-expired-error button:hover {
+  transform: translateY(-1px);
+  background: #f3f4f6;
+}
+
+.expired-overlay {
+  position: absolute;
+  inset: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(0, 0, 0, 0.72);
+
+  z-index: 5;
+}
+
+.expired-overlay span {
+  padding: 8px 14px;
+
+  border-radius: 8px;
+
+  background: rgba(239, 68, 68, 0.95);
+  color: #ffffff;
+
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.video-unavailable {
+  opacity: 0.85;
+}
+
 @media (max-width: 600px) {
   .existing-movie-item {
     align-items: flex-start;
