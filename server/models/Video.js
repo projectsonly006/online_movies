@@ -16,7 +16,7 @@ const videoSchema = new mongoose.Schema(
     // URL served by Render
     videoUrl: {
       type: String,
-      required: true,
+      default: "",
     },
 
     // IMPORTANT:
