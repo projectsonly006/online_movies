@@ -935,105 +935,105 @@ export const deleteVideo = async (req, res) => {
 // BACKGROUND DOWNLOAD
 // ==========================================
 
-export const createWatchableFromWeTransfer = async (req, res) => {
-  try {
-    const {
-      sourceUrl = "",
-      title = "",
-      filename = "",
-      cbc = "",
-      duration = 0,
-      format = "mp4",
-      size = 0,
-    } = req.body;
+// export const createWatchableFromWeTransfer = async (req, res) => {
+//   try {
+//     const {
+//       sourceUrl = "",
+//       title = "",
+//       filename = "",
+//       cbc = "",
+//       duration = 0,
+//       format = "mp4",
+//       size = 0,
+//     } = req.body;
 
-    if (!sourceUrl) {
-      return res.status(400).json({
-        success: false,
-        message: "WeTransfer URL is required",
-      });
-    }
+//     if (!sourceUrl) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "WeTransfer URL is required",
+//       });
+//     }
 
-    // Make sure it is actually a WeTransfer URL
-    let parsedUrl;
+//     // Make sure it is actually a WeTransfer URL
+//     let parsedUrl;
 
-    try {
-      parsedUrl = new URL(sourceUrl);
-    } catch {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid URL",
-      });
-    }
+//     try {
+//       parsedUrl = new URL(sourceUrl);
+//     } catch {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid URL",
+//       });
+//     }
 
-    if (
-      parsedUrl.hostname !== "we.tl" &&
-      !parsedUrl.hostname.endsWith(".wetransfer.com")
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Only WeTransfer URLs are supported",
-      });
-    }
+//     if (
+//       parsedUrl.hostname !== "we.tl" &&
+//       !parsedUrl.hostname.endsWith(".wetransfer.com")
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Only WeTransfer URLs are supported",
+//       });
+//     }
 
-    const newVideo = await Video.create({
-      title: title.trim() || "Untitled Video",
+//     const newVideo = await Video.create({
+//       title: title.trim() || "Untitled Video",
 
-      publicId: `wetransfer-${Date.now()}`,
+//       publicId: `wetransfer-${Date.now()}`,
 
-      // We are NOT storing a local video URL
-      videoUrl: "",
+//       // We are NOT storing a local video URL
+//       videoUrl: "",
 
-      // This is the important part
-      sourceUrl: sourceUrl.trim(),
+//       // This is the important part
+//       sourceUrl: sourceUrl.trim(),
 
-      filename: filename.trim(),
+//       filename: filename.trim(),
 
-      thumbnailUrl: "",
+//       thumbnailUrl: "",
 
-      duration: Number(duration) || 0,
+//       duration: Number(duration) || 0,
 
-      format: format || "mp4",
+//       format: format || "mp4",
 
-      size: Number(size) || 0,
+//       size: Number(size) || 0,
 
-      cbc: cbc.trim(),
-    });
+//       cbc: cbc.trim(),
+//     });
 
-    console.log("=================================");
-    console.log("WETRANSFER VIDEO CREATED");
-    console.log("VIDEO ID:", newVideo._id);
-    console.log("SOURCE:", newVideo.sourceUrl);
-    console.log("NO VIDEO DOWNLOADED");
-    console.log("=================================");
+//     console.log("=================================");
+//     console.log("WETRANSFER VIDEO CREATED");
+//     console.log("VIDEO ID:", newVideo._id);
+//     console.log("SOURCE:", newVideo.sourceUrl);
+//     console.log("NO VIDEO DOWNLOADED");
+//     console.log("=================================");
 
-    return res.status(201).json({
-      success: true,
+//     return res.status(201).json({
+//       success: true,
 
-      message: "WeTransfer video added successfully",
+//       message: "WeTransfer video added successfully",
 
-      video: {
-        id: newVideo._id,
-        title: newVideo.title,
-        videoUrl: "",
-        sourceUrl: newVideo.sourceUrl,
-        duration: newVideo.duration,
-        format: newVideo.format,
-        size: newVideo.size,
-        cbc: newVideo.cbc,
-      },
+//       video: {
+//         id: newVideo._id,
+//         title: newVideo.title,
+//         videoUrl: "",
+//         sourceUrl: newVideo.sourceUrl,
+//         duration: newVideo.duration,
+//         format: newVideo.format,
+//         size: newVideo.size,
+//         cbc: newVideo.cbc,
+//       },
 
-      watchUrl: `/watch/${newVideo._id}`,
-    });
-  } catch (error) {
-    console.error("CREATE WETRANSFER VIDEO ERROR:", error);
+//       watchUrl: `/watch/${newVideo._id}`,
+//     });
+//   } catch (error) {
+//     console.error("CREATE WETRANSFER VIDEO ERROR:", error);
 
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to create video",
-    });
-  }
-};
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message || "Failed to create video",
+//     });
+//   }
+// };
 
 // ==========================================
 // GET DOWNLOAD PROGRESS
@@ -1071,333 +1071,333 @@ export const getDownloadProgress = async (req, res) => {
 // STREAM VIDEO
 // ==========================================
 
-export const streamVideo = async (req, res) => {
-  try {
-    const { id } = req.params;
+// export const streamVideo = async (req, res) => {
+//   try {
+//     const { id } = req.params;
 
-    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        code: "INVALID_VIDEO_ID",
-        message: "Invalid video ID",
-      });
-    }
+//     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+//       return res.status(400).json({
+//         success: false,
+//         code: "INVALID_VIDEO_ID",
+//         message: "Invalid video ID",
+//       });
+//     }
 
-    const video = await Video.findById(id);
+//     const video = await Video.findById(id);
 
-    if (!video) {
-      return res.status(404).json({
-        success: false,
-        code: "VIDEO_NOT_FOUND",
-        message: "Video not found",
-      });
-    }
+//     if (!video) {
+//       return res.status(404).json({
+//         success: false,
+//         code: "VIDEO_NOT_FOUND",
+//         message: "Video not found",
+//       });
+//     }
 
-    // ==========================================
-    // GET ORIGINAL WETRANSFER URL
-    // ==========================================
+//     // ==========================================
+//     // GET ORIGINAL WETRANSFER URL
+//     // ==========================================
 
-    const sourceUrl = video.sourceUrl?.trim();
+//     const sourceUrl = video.sourceUrl?.trim();
 
-    if (!sourceUrl) {
-      return res.status(410).json({
-        success: false,
-        code: "VIDEO_LINK_EXPIRED",
-        message: "This video is no longer available.",
-      });
-    }
+//     if (!sourceUrl) {
+//       return res.status(410).json({
+//         success: false,
+//         code: "VIDEO_LINK_EXPIRED",
+//         message: "This video is no longer available.",
+//       });
+//     }
 
-    console.log("=================================");
-    console.log("WETRANSFER STREAM");
-    console.log("VIDEO ID:", id);
-    console.log("SOURCE:", sourceUrl);
-    console.log("RANGE:", req.headers.range || "none");
-    console.log("=================================");
+//     console.log("=================================");
+//     console.log("WETRANSFER STREAM");
+//     console.log("VIDEO ID:", id);
+//     console.log("SOURCE:", sourceUrl);
+//     console.log("RANGE:", req.headers.range || "none");
+//     console.log("=================================");
 
-    // ==========================================
-    // REQUEST CURRENT FILE FROM WETRANSFER
-    // ==========================================
+//     // ==========================================
+//     // REQUEST CURRENT FILE FROM WETRANSFER
+//     // ==========================================
 
-    const headers = {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/140 Safari/537.36",
+//     const headers = {
+//       "User-Agent":
+//         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+//         "AppleWebKit/537.36 (KHTML, like Gecko) " +
+//         "Chrome/140 Safari/537.36",
 
-      Accept: "*/*",
-    };
+//       Accept: "*/*",
+//     };
 
-    // IMPORTANT:
-    // Pass the browser's Range header to WeTransfer.
-    // This allows seeking inside the video.
-    if (req.headers.range) {
-      headers.Range = req.headers.range;
-    }
+//     // IMPORTANT:
+//     // Pass the browser's Range header to WeTransfer.
+//     // This allows seeking inside the video.
+//     if (req.headers.range) {
+//       headers.Range = req.headers.range;
+//     }
 
-    const response = await axios.get(sourceUrl, {
-      responseType: "stream",
+//     const response = await axios.get(sourceUrl, {
+//       responseType: "stream",
 
-      maxRedirects: 10,
+//       maxRedirects: 10,
 
-      timeout: 30000,
+//       timeout: 30000,
 
-      headers,
+//       headers,
 
-      validateStatus: (status) => status >= 200 && status < 500,
-    });
+//       validateStatus: (status) => status >= 200 && status < 500,
+//     });
 
-    const contentType =
-      response.headers["content-type"] ||
-      response.headers["Content-Type"] ||
-      "";
+//     const contentType =
+//       response.headers["content-type"] ||
+//       response.headers["Content-Type"] ||
+//       "";
 
-    const status = response.status;
+//     const status = response.status;
 
-    console.log("WETRANSFER STATUS:", status);
-    console.log("CONTENT TYPE:", contentType);
-    console.log("FINAL URL:", response.request?.res?.responseUrl || "unknown");
+//     console.log("WETRANSFER STATUS:", status);
+//     console.log("CONTENT TYPE:", contentType);
+//     console.log("FINAL URL:", response.request?.res?.responseUrl || "unknown");
 
-    // ==========================================
-    // EXPIRED / NOT FOUND
-    // ==========================================
+//     // ==========================================
+//     // EXPIRED / NOT FOUND
+//     // ==========================================
 
-    if (status === 404 || status === 410 || status === 403) {
-      response.data.destroy();
+//     if (status === 404 || status === 410 || status === 403) {
+//       response.data.destroy();
 
-      return res.status(410).json({
-        success: false,
-        code: "VIDEO_LINK_EXPIRED",
-        message: "This video is no longer available.",
-      });
-    }
+//       return res.status(410).json({
+//         success: false,
+//         code: "VIDEO_LINK_EXPIRED",
+//         message: "This video is no longer available.",
+//       });
+//     }
 
-    // ==========================================
-    // WETRANSFER RETURNED HTML
-    // ==========================================
+//     // ==========================================
+//     // WETRANSFER RETURNED HTML
+//     // ==========================================
 
-    if (contentType.toLowerCase().includes("text/html")) {
-      response.data.destroy();
+//     if (contentType.toLowerCase().includes("text/html")) {
+//       response.data.destroy();
 
-      return res.status(410).json({
-        success: false,
-        code: "VIDEO_LINK_EXPIRED",
-        message:
-          "The WeTransfer video could not be accessed. The transfer may have expired.",
-      });
-    }
+//       return res.status(410).json({
+//         success: false,
+//         code: "VIDEO_LINK_EXPIRED",
+//         message:
+//           "The WeTransfer video could not be accessed. The transfer may have expired.",
+//       });
+//     }
 
-    // ==========================================
-    // WETRANSFER RETURNED JSON ERROR
-    // ==========================================
+//     // ==========================================
+//     // WETRANSFER RETURNED JSON ERROR
+//     // ==========================================
 
-    if (contentType.toLowerCase().includes("application/json")) {
-      response.data.destroy();
+//     if (contentType.toLowerCase().includes("application/json")) {
+//       response.data.destroy();
 
-      return res.status(410).json({
-        success: false,
-        code: "VIDEO_LINK_EXPIRED",
-        message: "This WeTransfer transfer is no longer available.",
-      });
-    }
+//       return res.status(410).json({
+//         success: false,
+//         code: "VIDEO_LINK_EXPIRED",
+//         message: "This WeTransfer transfer is no longer available.",
+//       });
+//     }
 
-    // ==========================================
-    // DETERMINE CONTENT TYPE
-    // ==========================================
+//     // ==========================================
+//     // DETERMINE CONTENT TYPE
+//     // ==========================================
 
-    let finalContentType = contentType;
+//     let finalContentType = contentType;
 
-    if (!finalContentType || finalContentType === "application/octet-stream") {
-      const extension = path
-        .extname(video.filename || "")
-        .replace(".", "")
-        .toLowerCase();
+//     if (!finalContentType || finalContentType === "application/octet-stream") {
+//       const extension = path
+//         .extname(video.filename || "")
+//         .replace(".", "")
+//         .toLowerCase();
 
-      const mimeTypes = {
-        mp4: "video/mp4",
-        webm: "video/webm",
-        mov: "video/quicktime",
-        m4v: "video/x-m4v",
-      };
+//       const mimeTypes = {
+//         mp4: "video/mp4",
+//         webm: "video/webm",
+//         mov: "video/quicktime",
+//         m4v: "video/x-m4v",
+//       };
 
-      finalContentType = mimeTypes[extension] || "application/octet-stream";
-    }
+//       finalContentType = mimeTypes[extension] || "application/octet-stream";
+//     }
 
-    // ==========================================
-    // HEADERS
-    // ==========================================
+//     // ==========================================
+//     // HEADERS
+//     // ==========================================
 
-    const responseHeaders = {
-      "Content-Type": finalContentType,
+//     const responseHeaders = {
+//       "Content-Type": finalContentType,
 
-      "Accept-Ranges": response.headers["accept-ranges"] || "bytes",
+//       "Accept-Ranges": response.headers["accept-ranges"] || "bytes",
 
-      "Cache-Control": "no-store",
+//       "Cache-Control": "no-store",
 
-      "X-Content-Type-Options": "nosniff",
-    };
+//       "X-Content-Type-Options": "nosniff",
+//     };
 
-    // Content-Length
-    if (response.headers["content-length"]) {
-      responseHeaders["Content-Length"] = response.headers["content-length"];
-    }
+//     // Content-Length
+//     if (response.headers["content-length"]) {
+//       responseHeaders["Content-Length"] = response.headers["content-length"];
+//     }
 
-    // Content-Range
-    if (response.headers["content-range"]) {
-      responseHeaders["Content-Range"] = response.headers["content-range"];
-    }
+//     // Content-Range
+//     if (response.headers["content-range"]) {
+//       responseHeaders["Content-Range"] = response.headers["content-range"];
+//     }
 
-    // ==========================================
-    // RETURN CORRECT STATUS
-    // ==========================================
+//     // ==========================================
+//     // RETURN CORRECT STATUS
+//     // ==========================================
 
-    if (status === 206) {
-      res.writeHead(206, responseHeaders);
-    } else {
-      res.writeHead(200, responseHeaders);
-    }
+//     if (status === 206) {
+//       res.writeHead(206, responseHeaders);
+//     } else {
+//       res.writeHead(200, responseHeaders);
+//     }
 
-    // ==========================================
-    // PIPE DIRECTLY TO BROWSER
-    //
-    // NOTHING IS SAVED TO DISK
-    // ==========================================
+//     // ==========================================
+//     // PIPE DIRECTLY TO BROWSER
+//     //
+//     // NOTHING IS SAVED TO DISK
+//     // ==========================================
 
-    response.data.on("error", (error) => {
-      console.error("WETRANSFER STREAM ERROR:", error);
+//     response.data.on("error", (error) => {
+//       console.error("WETRANSFER STREAM ERROR:", error);
 
-      if (!res.destroyed) {
-        res.destroy(error);
-      }
-    });
+//       if (!res.destroyed) {
+//         res.destroy(error);
+//       }
+//     });
 
-    req.on("close", () => {
-      if (!res.destroyed) {
-        response.data.destroy();
-      }
-    });
+//     req.on("close", () => {
+//       if (!res.destroyed) {
+//         response.data.destroy();
+//       }
+//     });
 
-    response.data.pipe(res);
-  } catch (error) {
-    console.error("WETRANSFER STREAM FAILED:", error.message);
+//     response.data.pipe(res);
+//   } catch (error) {
+//     console.error("WETRANSFER STREAM FAILED:", error.message);
 
-    if (error.response) {
-      console.error("STATUS:", error.response.status);
-    }
+//     if (error.response) {
+//       console.error("STATUS:", error.response.status);
+//     }
 
-    if (!res.headersSent) {
-      return res.status(410).json({
-        success: false,
-        code: "VIDEO_LINK_EXPIRED",
-        message:
-          "This video is no longer available. The WeTransfer link may have expired.",
-      });
-    }
+//     if (!res.headersSent) {
+//       return res.status(410).json({
+//         success: false,
+//         code: "VIDEO_LINK_EXPIRED",
+//         message:
+//           "This video is no longer available. The WeTransfer link may have expired.",
+//       });
+//     }
 
-    res.destroy();
-  }
-};
+//     res.destroy();
+//   }
+// };
 
 // ==========================================
 // CHECK VIDEO AVAILABILITY
 // ==========================================
 
-export const checkVideoAvailability = async (req, res) => {
-  try {
-    const { id } = req.params;
+// export const checkVideoAvailability = async (req, res) => {
+//   try {
+//     const { id } = req.params;
 
-    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        available: false,
-        code: "INVALID_VIDEO_ID",
-        message: "Invalid video ID",
-      });
-    }
+//     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+//       return res.status(400).json({
+//         available: false,
+//         code: "INVALID_VIDEO_ID",
+//         message: "Invalid video ID",
+//       });
+//     }
 
-    const video = await Video.findById(id);
+//     const video = await Video.findById(id);
 
-    if (!video) {
-      return res.status(404).json({
-        available: false,
-        code: "VIDEO_NOT_FOUND",
-        message: "Video not found",
-      });
-    }
+//     if (!video) {
+//       return res.status(404).json({
+//         available: false,
+//         code: "VIDEO_NOT_FOUND",
+//         message: "Video not found",
+//       });
+//     }
 
-    const sourceUrl = video.sourceUrl?.trim();
+//     const sourceUrl = video.sourceUrl?.trim();
 
-    if (!sourceUrl) {
-      return res.status(410).json({
-        available: false,
-        code: "VIDEO_LINK_EXPIRED",
-        message: "This video is no longer available.",
-      });
-    }
+//     if (!sourceUrl) {
+//       return res.status(410).json({
+//         available: false,
+//         code: "VIDEO_LINK_EXPIRED",
+//         message: "This video is no longer available.",
+//       });
+//     }
 
-    try {
-      const response = await axios.get(sourceUrl, {
-        responseType: "stream",
+//     try {
+//       const response = await axios.get(sourceUrl, {
+//         responseType: "stream",
 
-        maxRedirects: 10,
+//         maxRedirects: 10,
 
-        timeout: 15000,
+//         timeout: 15000,
 
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/140 Safari/537.36",
+//         headers: {
+//           "User-Agent":
+//             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+//             "AppleWebKit/537.36 (KHTML, like Gecko) " +
+//             "Chrome/140 Safari/537.36",
 
-          Accept: "*/*",
-        },
+//           Accept: "*/*",
+//         },
 
-        validateStatus: (status) => status >= 200 && status < 500,
-      });
+//         validateStatus: (status) => status >= 200 && status < 500,
+//       });
 
-      const status = response.status;
+//       const status = response.status;
 
-      const contentType = response.headers["content-type"] || "";
+//       const contentType = response.headers["content-type"] || "";
 
-      response.data.destroy();
+//       response.data.destroy();
 
-      // Expired / unavailable
-      if (status === 403 || status === 404 || status === 410) {
-        return res.status(410).json({
-          available: false,
-          code: "VIDEO_LINK_EXPIRED",
-          message: "This video is no longer available.",
-        });
-      }
+//       // Expired / unavailable
+//       if (status === 403 || status === 404 || status === 410) {
+//         return res.status(410).json({
+//           available: false,
+//           code: "VIDEO_LINK_EXPIRED",
+//           message: "This video is no longer available.",
+//         });
+//       }
 
-      // WeTransfer returned its webpage
-      if (contentType.includes("text/html")) {
-        return res.status(410).json({
-          available: false,
-          code: "VIDEO_LINK_EXPIRED",
-          message: "The WeTransfer video is no longer available.",
-        });
-      }
+//       // WeTransfer returned its webpage
+//       if (contentType.includes("text/html")) {
+//         return res.status(410).json({
+//           available: false,
+//           code: "VIDEO_LINK_EXPIRED",
+//           message: "The WeTransfer video is no longer available.",
+//         });
+//       }
 
-      return res.json({
-        available: true,
-        code: "VIDEO_AVAILABLE",
-        message: "Video is available",
-      });
-    } catch (error) {
-      console.error("WETRANSFER AVAILABILITY ERROR:", error.message);
+//       return res.json({
+//         available: true,
+//         code: "VIDEO_AVAILABLE",
+//         message: "Video is available",
+//       });
+//     } catch (error) {
+//       console.error("WETRANSFER AVAILABILITY ERROR:", error.message);
 
-      return res.status(410).json({
-        available: false,
-        code: "VIDEO_LINK_EXPIRED",
-        message: "This video is no longer available.",
-      });
-    }
-  } catch (error) {
-    console.error("CHECK VIDEO AVAILABILITY ERROR:", error);
+//       return res.status(410).json({
+//         available: false,
+//         code: "VIDEO_LINK_EXPIRED",
+//         message: "This video is no longer available.",
+//       });
+//     }
+//   } catch (error) {
+//     console.error("CHECK VIDEO AVAILABILITY ERROR:", error);
 
-    return res.status(500).json({
-      available: false,
-      code: "VIDEO_AVAILABILITY_ERROR",
-      message: "Unable to check video availability.",
-    });
-  }
-};
+//     return res.status(500).json({
+//       available: false,
+//       code: "VIDEO_AVAILABILITY_ERROR",
+//       message: "Unable to check video availability.",
+//     });
+//   }
+// };

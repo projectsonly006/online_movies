@@ -7,10 +7,10 @@ import {
   getVideos,
   getVideo,
   updateVideo,
-  createWatchableFromWeTransfer,
-  streamVideo,
+  // createWatchableFromWeTransfer,
+  // streamVideo,
   deleteVideo,
-  checkVideoAvailability,
+  // checkVideoAvailability,
   getDownloadProgress,
 } from "../controllers/videoController.js";
 
@@ -22,7 +22,7 @@ const router = express.Router();
 router.post("/upload", adminAuth, uploadVideo);
 router.post("/create-url", adminAuth, createVideoFromUrl);
 router.post("/create-local", adminAuth, createLocalVideo);
-router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
+// router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
 
 router.get("/download-progress/:jobId", adminAuth, getDownloadProgress);
 
@@ -31,8 +31,8 @@ router.delete("/:id", adminAuth, deleteVideo);
 
 // PUBLIC
 router.get("/", getVideos);
-router.get("/stream/:id", streamVideo);
-router.get("/availability/:id", checkVideoAvailability);
+// router.get("/stream/:id", streamVideo);
+// router.get("/availability/:id", checkVideoAvailability);
 router.get("/:id", getVideo);
 
 export default router;
