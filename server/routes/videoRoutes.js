@@ -1,5 +1,3 @@
-import express from "express";
-
 import {
   uploadVideo,
   createVideoFromUrl,
@@ -27,6 +25,7 @@ router.post("/create-url", adminAuth, createVideoFromUrl);
 
 router.post("/create-local", adminAuth, createLocalVideo);
 
+// WeTransfer → download → save to /videos → MongoDB
 router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
 
 router.get("/download-progress/:jobId", adminAuth, getDownloadProgress);
@@ -41,6 +40,7 @@ router.delete("/:id", adminAuth, deleteVideo);
 
 router.get("/", getVideos);
 
+// Stream downloaded local video
 router.get("/stream/:id", streamVideo);
 
 router.get("/:id", getVideo);
