@@ -22,7 +22,6 @@ const VIDEO_FOLDER = path.join(__dirname, "..", "videos");
 const SERVER_URL =
   process.env.SERVER_URL || "https://online-movies-uebc.onrender.com";
 
-// Make sure videos directory exists when server starts.
 await fs.promises.mkdir(VIDEO_FOLDER, {
   recursive: true,
 });
@@ -65,6 +64,13 @@ export const upload = multer({
 // HELPERS
 // ======================================================
 
+function sanitizeFilename(filename) {
+  return String(filename || "")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function getSafeFilename(filename, fallback = "download.mp4") {
   let safeFilename = path.basename(String(filename || "").trim());
 
@@ -73,13 +79,6 @@ function getSafeFilename(filename, fallback = "download.mp4") {
   }
 
   return safeFilename;
-}
-
-function sanitizeFilename(filename) {
-  return String(filename || "")
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function getVideoUrl(filename) {
@@ -103,20 +102,36 @@ function createJobId() {
   return `job-${Date.now()}-${uuidv4().slice(0, 8)}`;
 }
 
-function isWeTransferUrl(value) {
+// ======================================================
+// URL DETECTION
+// ======================================================
+
+function getHostname(value) {
   try {
-    const url = new URL(value);
-
-    const hostname = url.hostname.toLowerCase();
-
-    return (
-      hostname === "we.tl" ||
-      hostname === "wetransfer.com" ||
-      hostname.endsWith(".wetransfer.com")
-    );
+    return new URL(value).hostname.toLowerCase();
   } catch {
-    return false;
+    return "";
   }
+}
+
+function isWeTransferShareUrl(value) {
+  const hostname = getHostname(value);
+
+  return (
+    hostname === "we.tl" ||
+    hostname === "wetransfer.com" ||
+    hostname.endsWith(".wetransfer.com")
+  );
+}
+
+function isWeTransferDirectUrl(value) {
+  const hostname = getHostname(value);
+
+  return hostname === "wetransfer.net" || hostname.endsWith(".wetransfer.net");
+}
+
+function isSupportedWeTransferUrl(value) {
+  return isWeTransferShareUrl(value) || isWeTransferDirectUrl(value);
 }
 
 // ======================================================
@@ -154,16 +169,32 @@ function getDownloadHeaders() {
     "Accept-Language": "en-US,en;q=0.9",
 
     Referer: "https://wetransfer.com/",
+
+    Connection: "keep-alive",
   };
 }
 
 // ======================================================
-// RESOLVE WETRANSFER URL
+// CHECK RESPONSE
 // ======================================================
 
-async function resolveWeTransferUrl(sourceUrl) {
+function looksLikeHtmlOrJson(contentType) {
+  const type = String(contentType || "").toLowerCase();
+
+  return (
+    type.includes("text/html") ||
+    type.includes("application/json") ||
+    type.includes("text/plain")
+  );
+}
+
+// ======================================================
+// RESOLVE WETRANSFER SHARE URL
+// ======================================================
+
+async function resolveWeTransferShareUrl(sourceUrl) {
   console.log("=================================");
-  console.log("RESOLVING WETRANSFER URL");
+  console.log("RESOLVING WETRANSFER SHARE URL");
   console.log("=================================");
   console.log("SOURCE:", sourceUrl);
 
@@ -179,57 +210,42 @@ async function resolveWeTransferUrl(sourceUrl) {
     validateStatus: (status) => status >= 200 && status < 400,
   });
 
-  console.log("WETRANSFER STATUS:", response.status);
-  console.log(
-    "WETRANSFER FINAL URL:",
-    response.request?.res?.responseUrl || sourceUrl,
-  );
-
-  const html = String(response.data || "");
+  const finalUrl = response.request?.res?.responseUrl || sourceUrl;
 
   const contentType = String(
     response.headers["content-type"] || "",
   ).toLowerCase();
 
-  console.log("WETRANSFER CONTENT TYPE:", contentType);
+  console.log("STATUS:", response.status);
+  console.log("FINAL URL:", finalUrl);
+  console.log("CONTENT TYPE:", contentType);
 
   // --------------------------------------------------
-  // Sometimes the URL itself redirects to a file.
+  // If WeTransfer redirected directly to CDN
   // --------------------------------------------------
 
-  if (
-    contentType &&
-    !contentType.includes("text/html") &&
-    !contentType.includes("application/json")
-  ) {
-    const finalUrl = response.request?.res?.responseUrl || sourceUrl;
-
+  if (isWeTransferDirectUrl(finalUrl) && !looksLikeHtmlOrJson(contentType)) {
     return finalUrl;
   }
 
-  // --------------------------------------------------
-  // Search for direct download URLs.
-  // --------------------------------------------------
+  const html = String(response.data || "");
 
   const candidates = [];
 
-  // JSON escaped URLs
-  const jsonUrlRegex = /https?:\\?\/\\?\/[^"'\\\s<>]+/gi;
+  // --------------------------------------------------
+  // Extract URLs from page
+  // --------------------------------------------------
 
-  const jsonMatches = html.match(jsonUrlRegex) || [];
+  const urlRegex = /https?:\/\/[^"'\\\s<>]+/gi;
 
-  for (const match of jsonMatches) {
-    candidates.push(match.replace(/\\\//g, "/").replace(/\\"/g, '"'));
-  }
+  const matches = html.match(urlRegex) || [];
 
-  // Normal URLs
-  const normalUrlRegex = /https?:\/\/[^"'\\\s<>]+/gi;
+  candidates.push(...matches);
 
-  const normalMatches = html.match(normalUrlRegex) || [];
+  // --------------------------------------------------
+  // Common JSON fields
+  // --------------------------------------------------
 
-  candidates.push(...normalMatches);
-
-  // Look for common download URL patterns.
   const patterns = [
     /"downloadUrl"\s*:\s*"([^"]+)"/i,
     /"download_url"\s*:\s*"([^"]+)"/i,
@@ -242,12 +258,12 @@ async function resolveWeTransferUrl(sourceUrl) {
     const match = html.match(regex);
 
     if (match?.[1]) {
-      candidates.push(match[1].replace(/\\\//g, "/").replace(/\\"/g, '"'));
+      candidates.push(match[1]);
     }
   }
 
   // --------------------------------------------------
-  // Clean candidates.
+  // Clean URLs
   // --------------------------------------------------
 
   const cleaned = [
@@ -255,26 +271,30 @@ async function resolveWeTransferUrl(sourceUrl) {
       candidates
         .map((url) =>
           String(url)
+            .replace(/\\\//g, "/")
             .replace(/\\u0026/g, "&")
             .replace(/\\u003F/g, "?")
             .replace(/\\u003D/g, "=")
             .replace(/&amp;/g, "&")
+            .replace(/\\"/g, '"')
             .trim(),
         )
         .filter((url) => /^https?:\/\//i.test(url)),
     ),
   ];
 
-  console.log("FOUND URL CANDIDATES:", cleaned.length);
+  console.log("URL CANDIDATES:", cleaned.length);
 
   // --------------------------------------------------
-  // Test candidates.
+  // Prefer WeTransfer CDN URLs
   // --------------------------------------------------
 
-  for (const candidate of cleaned) {
+  const cdnCandidates = cleaned.filter((url) => isWeTransferDirectUrl(url));
+
+  for (const candidate of cdnCandidates) {
+    console.log("TESTING CDN:", candidate);
+
     try {
-      console.log("TESTING:", candidate);
-
       const test = await axios.get(candidate, {
         headers: getDownloadHeaders(),
 
@@ -293,24 +313,58 @@ async function resolveWeTransferUrl(sourceUrl) {
 
       test.data.destroy();
 
-      console.log("CANDIDATE:", type, length);
+      console.log("CDN RESPONSE:", type, length);
 
-      if (!type.includes("text/html") && !type.includes("application/json")) {
+      if (!looksLikeHtmlOrJson(type)) {
         return candidate;
       }
     } catch (error) {
-      console.warn("Candidate failed:", error.message);
+      console.warn("CDN candidate failed:", error.message);
     }
   }
 
   throw new Error(
-    "Could not resolve the WeTransfer share page to a direct download URL. " +
-      "The transfer may be expired, private, protected, or WeTransfer may have changed its download API.",
+    "Could not resolve the WeTransfer share URL to a direct download URL. " +
+      "The transfer may be expired, private, protected, or unavailable.",
   );
 }
 
 // ======================================================
-// DOWNLOAD WETRANSFER VIDEO
+// RESOLVE SOURCE
+// ======================================================
+
+async function resolveDownloadUrl(sourceUrl) {
+  const cleanUrl = String(sourceUrl || "").trim();
+
+  if (!cleanUrl) {
+    throw new Error("Download URL is required.");
+  }
+
+  // --------------------------------------------------
+  // Direct WeTransfer CDN URL
+  // --------------------------------------------------
+
+  if (isWeTransferDirectUrl(cleanUrl)) {
+    console.log("DIRECT WETRANSFER CDN URL DETECTED");
+
+    return cleanUrl;
+  }
+
+  // --------------------------------------------------
+  // WeTransfer share URL
+  // --------------------------------------------------
+
+  if (isWeTransferShareUrl(cleanUrl)) {
+    return await resolveWeTransferShareUrl(cleanUrl);
+  }
+
+  throw new Error(
+    "Unsupported URL. Only WeTransfer share URLs and WeTransfer CDN URLs are supported.",
+  );
+}
+
+// ======================================================
+// DOWNLOAD FILE
 // ======================================================
 
 async function downloadWeTransferVideo(
@@ -332,19 +386,16 @@ async function downloadWeTransferVideo(
   });
 
   // --------------------------------------------------
-  // Resolve share URL first.
+  // Resolve URL
   // --------------------------------------------------
 
-  let downloadUrl = sourceUrl;
+  const downloadUrl = await resolveDownloadUrl(sourceUrl);
 
-  if (isWeTransferUrl(sourceUrl)) {
-    downloadUrl = await resolveWeTransferUrl(sourceUrl);
-  }
-
-  console.log("ACTUAL DOWNLOAD URL:", downloadUrl);
+  console.log("ACTUAL DOWNLOAD URL:");
+  console.log(downloadUrl);
 
   // --------------------------------------------------
-  // Download actual file.
+  // Start download
   // --------------------------------------------------
 
   const response = await axios.get(downloadUrl, {
@@ -370,17 +421,14 @@ async function downloadWeTransferVideo(
   console.log("CONTENT LENGTH:", contentLength);
 
   // --------------------------------------------------
-  // Make sure this is not HTML/JSON.
+  // NEVER save HTML/JSON as MP4
   // --------------------------------------------------
 
-  if (
-    contentType.includes("text/html") ||
-    contentType.includes("application/json")
-  ) {
+  if (looksLikeHtmlOrJson(contentType)) {
     response.data.destroy();
 
     throw new Error(
-      "WeTransfer still returned a webpage/JSON response instead of the video file.",
+      `WeTransfer returned ${contentType} instead of a video file.`,
     );
   }
 
@@ -393,15 +441,26 @@ async function downloadWeTransferVideo(
   if (jobId) {
     setProgress(jobId, {
       status: "downloading",
+
       percentage: 0,
+
       downloadedBytes: 0,
+
       totalBytes,
+
       downloadedMB: 0,
+
       totalMB: Number((totalBytes / 1024 / 1024).toFixed(2)),
+
       speedMBps: 0,
+
       filename,
     });
   }
+
+  // --------------------------------------------------
+  // Write stream
+  // --------------------------------------------------
 
   const writer = fs.createWriteStream(outputPath);
 
@@ -412,6 +471,7 @@ async function downloadWeTransferVideo(
       if (settled) return;
 
       settled = true;
+
       reject(error);
     };
 
@@ -419,6 +479,7 @@ async function downloadWeTransferVideo(
       if (settled) return;
 
       settled = true;
+
       resolve();
     };
 
@@ -452,12 +513,19 @@ async function downloadWeTransferVideo(
       if (jobId) {
         setProgress(jobId, {
           status: "downloading",
+
           percentage,
+
           downloadedBytes,
+
           totalBytes,
+
           downloadedMB: Number(downloadedMB.toFixed(2)),
+
           totalMB: Number(totalMB.toFixed(2)),
+
           speedMBps: Number(speedMBps.toFixed(2)),
+
           filename,
         });
       }
@@ -508,6 +576,23 @@ async function downloadWeTransferVideo(
     throw new Error("Downloaded video file is empty.");
   }
 
+  console.log("DOWNLOADED SIZE:", stats.size);
+
+  // --------------------------------------------------
+  // Detect tiny error files
+  // --------------------------------------------------
+
+  if (stats.size < 100000 && contentLength > 100000) {
+    try {
+      await fs.promises.unlink(outputPath);
+    } catch {}
+
+    throw new Error(
+      `Download was unexpectedly small (${stats.size} bytes). ` +
+        `Expected approximately ${contentLength} bytes.`,
+    );
+  }
+
   if (expectedSize > 0 && stats.size !== Number(expectedSize)) {
     console.warn(
       `Expected ${expectedSize} bytes but downloaded ${stats.size} bytes`,
@@ -517,21 +602,32 @@ async function downloadWeTransferVideo(
   if (jobId) {
     setProgress(jobId, {
       status: "processing",
+
       percentage: 100,
+
       downloadedBytes: stats.size,
+
       totalBytes: totalBytes || stats.size,
+
       downloadedMB: Number((stats.size / 1024 / 1024).toFixed(2)),
+
       totalMB: Number(((totalBytes || stats.size) / 1024 / 1024).toFixed(2)),
+
       speedMBps: 0,
+
       filename,
     });
   }
 
   return {
     path: outputPath,
+
     filename,
+
     size: stats.size,
+
     expectedSize: Number(expectedSize) || contentLength,
+
     contentType,
   };
 }
@@ -547,7 +643,9 @@ export const uploadVideo = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({
         success: false,
+
         code: "NO_VIDEO_FILE",
+
         message: "Video file is required",
       });
     }
@@ -595,18 +693,28 @@ export const uploadVideo = async (req, res) => {
 
     return res.status(201).json({
       success: true,
+
       message: "Video uploaded successfully",
 
       video: {
         id: video._id,
+
         title: video.title,
+
         videoUrl: video.videoUrl,
+
         sourceUrl: video.sourceUrl,
+
         filename: video.filename,
+
         thumbnailUrl: video.thumbnailUrl,
+
         duration: video.duration,
+
         format: video.format,
+
         size: video.size,
+
         cbc: video.cbc,
       },
 
@@ -615,7 +723,6 @@ export const uploadVideo = async (req, res) => {
   } catch (error) {
     console.error("UPLOAD VIDEO ERROR:", error);
 
-    // Delete uploaded file if DB creation failed.
     if (uploadedFile?.path) {
       try {
         await fs.promises.unlink(uploadedFile.path);
@@ -624,7 +731,9 @@ export const uploadVideo = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       code: "UPLOAD_VIDEO_FAILED",
+
       message: error.message || "Failed to upload video",
     });
   }
@@ -653,16 +762,26 @@ export const createWatchableFromWeTransfer = async (req, res) => {
     if (!cleanSourceUrl) {
       return res.status(400).json({
         success: false,
+
         code: "MISSING_SOURCE_URL",
+
         message: "WeTransfer URL is required",
       });
     }
 
-    if (!isWeTransferUrl(cleanSourceUrl)) {
+    // --------------------------------------------------
+    // IMPORTANT:
+    // Accept BOTH share URLs and CDN URLs.
+    // --------------------------------------------------
+
+    if (!isSupportedWeTransferUrl(cleanSourceUrl)) {
       return res.status(400).json({
         success: false,
+
         code: "INVALID_SOURCE",
-        message: "Only WeTransfer URLs are supported",
+
+        message:
+          "Only WeTransfer share URLs or WeTransfer CDN URLs are supported",
       });
     }
 
@@ -670,14 +789,25 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 
     setProgress(jobId, {
       status: "starting",
+
       percentage: 0,
+
       downloadedBytes: 0,
+
       totalBytes: Number(size) || 0,
+
       downloadedMB: 0,
+
       totalMB: Number((Number(size) / 1024 / 1024).toFixed(2)),
+
       speedMBps: 0,
+
       filename: filename || "",
     });
+
+    // --------------------------------------------------
+    // Filename
+    // --------------------------------------------------
 
     let safeFilename = sanitizeFilename(filename);
 
@@ -710,13 +840,21 @@ export const createWatchableFromWeTransfer = async (req, res) => {
     console.log("FILENAME:", safeFilename);
     console.log("OUTPUT:", outputPath);
 
-    const result = await downloadWeTransferVideo(
+    // --------------------------------------------------
+    // Download
+    // --------------------------------------------------
+
+    await downloadWeTransferVideo(
       cleanSourceUrl,
       outputPath,
       Number(size) || 0,
       safeFilename,
       jobId,
     );
+
+    // --------------------------------------------------
+    // Duration
+    // --------------------------------------------------
 
     let actualDuration = Number(duration) || 0;
 
@@ -726,13 +864,25 @@ export const createWatchableFromWeTransfer = async (req, res) => {
       console.warn("Could not determine video duration:", error.message);
     }
 
+    // --------------------------------------------------
+    // Verify file
+    // --------------------------------------------------
+
     const stats = await fs.promises.stat(outputPath);
 
     if (!stats.isFile() || stats.size <= 0) {
       throw new Error("Downloaded video is invalid or empty.");
     }
 
+    // --------------------------------------------------
+    // Create URL
+    // --------------------------------------------------
+
     const videoUrl = getVideoUrl(safeFilename);
+
+    // --------------------------------------------------
+    // MongoDB
+    // --------------------------------------------------
 
     const newVideo = await Video.create({
       title:
@@ -757,17 +907,38 @@ export const createWatchableFromWeTransfer = async (req, res) => {
       cbc: cbc.trim(),
     });
 
+    // --------------------------------------------------
+    // Complete
+    // --------------------------------------------------
+
     setProgress(jobId, {
       status: "completed",
+
       percentage: 100,
+
       downloadedBytes: stats.size,
+
       totalBytes: stats.size,
+
       downloadedMB: Number((stats.size / 1024 / 1024).toFixed(2)),
+
       totalMB: Number((stats.size / 1024 / 1024).toFixed(2)),
+
       speedMBps: 0,
+
       filename: safeFilename,
+
       videoId: newVideo._id.toString(),
     });
+
+    console.log("=================================");
+    console.log("VIDEO READY");
+    console.log("=================================");
+    console.log("VIDEO ID:", newVideo._id);
+    console.log("VIDEO URL:", videoUrl);
+    console.log("FILE:", safeFilename);
+    console.log("SIZE:", stats.size);
+    console.log("DURATION:", actualDuration);
 
     return res.status(201).json({
       success: true,
@@ -778,14 +949,23 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 
       video: {
         id: newVideo._id,
+
         title: newVideo.title,
+
         videoUrl: newVideo.videoUrl,
+
         sourceUrl: newVideo.sourceUrl,
+
         filename: newVideo.filename,
+
         thumbnailUrl: newVideo.thumbnailUrl,
+
         duration: newVideo.duration,
+
         format: newVideo.format,
+
         size: newVideo.size,
+
         cbc: newVideo.cbc,
       },
 
@@ -797,17 +977,24 @@ export const createWatchableFromWeTransfer = async (req, res) => {
     if (jobId) {
       setProgress(jobId, {
         status: "error",
+
         percentage: 0,
+
         error: error.message || "Download failed",
+
         filename: req.body?.filename || "",
+
         videoId: null,
       });
     }
 
     return res.status(500).json({
       success: false,
+
       code: "VIDEO_DOWNLOAD_FAILED",
+
       message: error.message || "Failed to download video",
+
       jobId,
     });
   }
@@ -824,6 +1011,7 @@ export const getDownloadProgress = async (req, res) => {
     if (!jobId) {
       return res.status(400).json({
         success: false,
+
         message: "jobId is required",
       });
     }
@@ -833,6 +1021,7 @@ export const getDownloadProgress = async (req, res) => {
     if (!progress) {
       return res.status(404).json({
         success: false,
+
         message: "Download job not found",
       });
     }
@@ -843,6 +1032,7 @@ export const getDownloadProgress = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to get download progress",
     });
   }
@@ -859,7 +1049,9 @@ export const streamVideo = async (req, res) => {
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
+
         code: "INVALID_VIDEO_ID",
+
         message: "Invalid video ID",
       });
     }
@@ -869,7 +1061,9 @@ export const streamVideo = async (req, res) => {
     if (!video) {
       return res.status(404).json({
         success: false,
+
         code: "VIDEO_NOT_FOUND",
+
         message: "Video not found",
       });
     }
@@ -877,7 +1071,9 @@ export const streamVideo = async (req, res) => {
     if (!video.filename) {
       return res.status(404).json({
         success: false,
+
         code: "VIDEO_FILE_NOT_FOUND",
+
         message: "Video file is not available",
       });
     }
@@ -893,7 +1089,9 @@ export const streamVideo = async (req, res) => {
     } catch {
       return res.status(404).json({
         success: false,
+
         code: "VIDEO_FILE_NOT_FOUND",
+
         message: "Video file is not available",
       });
     }
@@ -901,7 +1099,9 @@ export const streamVideo = async (req, res) => {
     if (!stats.isFile() || stats.size <= 0) {
       return res.status(404).json({
         success: false,
+
         code: "VIDEO_FILE_NOT_FOUND",
+
         message: "Video file is empty or unavailable",
       });
     }
@@ -914,19 +1114,34 @@ export const streamVideo = async (req, res) => {
 
     const mimeTypes = {
       mp4: "video/mp4",
+
       webm: "video/webm",
+
       mov: "video/quicktime",
+
       m4v: "video/x-m4v",
+
+      mkv: "video/x-matroska",
+
+      avi: "video/x-msvideo",
     };
 
     const contentType = mimeTypes[extension] || "video/mp4";
 
+    // --------------------------------------------------
+    // No Range
+    // --------------------------------------------------
+
     if (!range) {
       res.writeHead(200, {
         "Content-Type": contentType,
+
         "Content-Length": fileSize,
+
         "Accept-Ranges": "bytes",
+
         "Cache-Control": "public, max-age=3600",
+
         "X-Content-Type-Options": "nosniff",
       });
 
@@ -934,6 +1149,10 @@ export const streamVideo = async (req, res) => {
 
       return;
     }
+
+    // --------------------------------------------------
+    // Range
+    // --------------------------------------------------
 
     const match = range.match(/bytes=(\d*)-(\d*)/);
 
@@ -979,6 +1198,7 @@ export const streamVideo = async (req, res) => {
     if (!res.headersSent) {
       return res.status(500).json({
         success: false,
+
         message: "Failed to stream video",
       });
     }
@@ -1007,7 +1227,9 @@ export const createLocalVideo = async (req, res) => {
     if (!filename.trim()) {
       return res.status(400).json({
         success: false,
+
         code: "MISSING_FILENAME",
+
         message: "Filename is required",
       });
     }
@@ -1025,7 +1247,9 @@ export const createLocalVideo = async (req, res) => {
     } catch {
       return res.status(404).json({
         success: false,
+
         code: "VIDEO_FILE_NOT_FOUND",
+
         message: `Video file does not exist: ${safeFilename}`,
       });
     }
@@ -1033,7 +1257,9 @@ export const createLocalVideo = async (req, res) => {
     if (!stats.isFile() || stats.size <= 0) {
       return res.status(400).json({
         success: false,
+
         code: "INVALID_VIDEO_FILE",
+
         message: "Video file is empty or invalid",
       });
     }
@@ -1078,14 +1304,23 @@ export const createLocalVideo = async (req, res) => {
 
       video: {
         id: newVideo._id,
+
         title: newVideo.title,
+
         videoUrl: newVideo.videoUrl,
+
         sourceUrl: newVideo.sourceUrl,
+
         filename: newVideo.filename,
+
         thumbnailUrl: newVideo.thumbnailUrl,
+
         duration: newVideo.duration,
+
         format: newVideo.format,
+
         size: newVideo.size,
+
         cbc: newVideo.cbc,
       },
 
@@ -1096,7 +1331,9 @@ export const createLocalVideo = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       code: "CREATE_LOCAL_VIDEO_FAILED",
+
       message: error.message || "Failed to create local video",
     });
   }
@@ -1122,7 +1359,9 @@ export const createVideoFromUrl = async (req, res) => {
     if (!sourceUrl.trim()) {
       return res.status(400).json({
         success: false,
+
         code: "MISSING_SOURCE_URL",
+
         message: "Video URL is required",
       });
     }
@@ -1132,7 +1371,9 @@ export const createVideoFromUrl = async (req, res) => {
     } catch {
       return res.status(400).json({
         success: false,
+
         code: "INVALID_URL",
+
         message: "Invalid video URL",
       });
     }
@@ -1179,14 +1420,23 @@ export const createVideoFromUrl = async (req, res) => {
 
       video: {
         id: newVideo._id,
+
         title: newVideo.title,
+
         videoUrl: newVideo.videoUrl,
+
         sourceUrl: newVideo.sourceUrl,
+
         filename: newVideo.filename,
+
         thumbnailUrl: newVideo.thumbnailUrl,
+
         duration: newVideo.duration,
+
         format: newVideo.format,
+
         size: newVideo.size,
+
         cbc: newVideo.cbc,
       },
 
@@ -1197,7 +1447,9 @@ export const createVideoFromUrl = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       code: "CREATE_VIDEO_FROM_URL_FAILED",
+
       message: error.message || "Failed to create video from URL",
     });
   }
@@ -1217,7 +1469,9 @@ export const getVideos = async (req, res) => {
 
     return res.json({
       success: true,
+
       videos,
+
       count: videos.length,
     });
   } catch (error) {
@@ -1225,6 +1479,7 @@ export const getVideos = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to get videos",
     });
   }
@@ -1241,7 +1496,9 @@ export const getVideo = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
+
         code: "INVALID_VIDEO_ID",
+
         message: "Invalid video ID",
       });
     }
@@ -1251,13 +1508,16 @@ export const getVideo = async (req, res) => {
     if (!video) {
       return res.status(404).json({
         success: false,
+
         code: "VIDEO_NOT_FOUND",
+
         message: "Video not found",
       });
     }
 
     return res.json({
       success: true,
+
       video,
     });
   } catch (error) {
@@ -1265,6 +1525,7 @@ export const getVideo = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to get video",
     });
   }
@@ -1281,7 +1542,9 @@ export const updateVideo = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
+
         code: "INVALID_VIDEO_ID",
+
         message: "Invalid video ID",
       });
     }
@@ -1308,20 +1571,25 @@ export const updateVideo = async (req, res) => {
 
     const video = await Video.findByIdAndUpdate(id, updates, {
       new: true,
+
       runValidators: true,
     });
 
     if (!video) {
       return res.status(404).json({
         success: false,
+
         code: "VIDEO_NOT_FOUND",
+
         message: "Video not found",
       });
     }
 
     return res.json({
       success: true,
+
       message: "Video updated successfully",
+
       video,
     });
   } catch (error) {
@@ -1329,6 +1597,7 @@ export const updateVideo = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to update video",
     });
   }
@@ -1345,7 +1614,9 @@ export const deleteVideo = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
+
         code: "INVALID_VIDEO_ID",
+
         message: "Invalid video ID",
       });
     }
@@ -1355,7 +1626,9 @@ export const deleteVideo = async (req, res) => {
     if (!video) {
       return res.status(404).json({
         success: false,
+
         code: "VIDEO_NOT_FOUND",
+
         message: "Video not found",
       });
     }
@@ -1380,6 +1653,7 @@ export const deleteVideo = async (req, res) => {
 
     return res.json({
       success: true,
+
       message: "Video deleted successfully",
     });
   } catch (error) {
@@ -1387,6 +1661,7 @@ export const deleteVideo = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to delete video",
     });
   }

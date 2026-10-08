@@ -28,10 +28,10 @@ router.post("/upload", adminAuth, upload.single("video"), uploadVideo);
 // Create video from external URL
 router.post("/create-url", adminAuth, createVideoFromUrl);
 
-// Create video from an existing local file
+// Create video from existing local file
 router.post("/create-local", adminAuth, createLocalVideo);
 
-// WeTransfer → download → /videos → MongoDB
+// WeTransfer share URL OR direct WeTransfer CDN URL
 router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
 
 // Download progress
@@ -50,7 +50,7 @@ router.delete("/:id", adminAuth, deleteVideo);
 // Get all videos
 router.get("/", getVideos);
 
-// IMPORTANT: put stream before /:id
+// Stream local video
 router.get("/stream/:id", streamVideo);
 
 // Get single video
