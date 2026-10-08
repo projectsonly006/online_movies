@@ -730,7 +730,7 @@ function Watch() {
 
   const streamUrl = api(`/api/videos/stream/${video._id}`);
 
-  console.log("STREAM URL:", streamUrl);
+  // console.log("STREAM URL:", streamUrl); this will get url with numbers
 
   // ======================================================
   // PLAYER
