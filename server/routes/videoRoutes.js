@@ -1,6 +1,7 @@
 import express from "express";
 
 import {
+  uploadMiddleware,
   uploadVideo,
   createVideoFromUrl,
   createLocalVideo,
@@ -22,15 +23,17 @@ const router = express.Router();
 // ==========================================
 
 // Upload video
-router.post("/upload", adminAuth, uploadVideo);
+router.post("/upload", adminAuth, uploadMiddleware, uploadVideo);
 
 // Create video from external URL
 router.post("/create-url", adminAuth, createVideoFromUrl);
 
-// Create video from an already-existing local file
+// Create video from an already-existing
+// local file
 router.post("/create-local", adminAuth, createLocalVideo);
 
-// WeTransfer → download → save to /videos → MongoDB
+// WeTransfer → download → save to /videos
+// → MongoDB
 router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
 
 // Download progress
@@ -49,7 +52,8 @@ router.delete("/:id", adminAuth, deleteVideo);
 // Get all videos
 router.get("/", getVideos);
 
-// Stream downloaded local video
+// IMPORTANT:
+// Keep /stream/:id BEFORE /:id
 router.get("/stream/:id", streamVideo);
 
 // Get single video
