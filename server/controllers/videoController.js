@@ -591,158 +591,6 @@ export const createWatchableFromWeTransfer = async (req, res) => {
 };
 
 // ==========================================
-// CREATE LOCAL VIDEO
-// ==========================================
-
-export const createLocalVideo = async (req, res) => {
-  try {
-    const {
-      title = "",
-      filename = "",
-      videoUrl = "",
-      thumbnailUrl = "",
-      duration = 0,
-      format = "mp4",
-      size = 0,
-      cbc = "",
-    } = req.body || {};
-
-    // ==========================================
-    // VALIDATE FILENAME
-    // ==========================================
-
-    if (!filename.trim()) {
-      return res.status(400).json({
-        success: false,
-        code: "MISSING_FILENAME",
-        message: "Filename is required",
-      });
-    }
-
-    // ==========================================
-    // SANITIZE FILENAME
-    // ==========================================
-
-    let safeFilename = sanitizeFilename(filename);
-
-    safeFilename = getSafeFilename(safeFilename, `video-${Date.now()}.mp4`);
-
-    // ==========================================
-    // FIND LOCAL FILE
-    // ==========================================
-
-    const filePath = path.join(VIDEO_FOLDER, safeFilename);
-
-    let stats;
-
-    try {
-      stats = await fs.promises.stat(filePath);
-    } catch {
-      return res.status(404).json({
-        success: false,
-        code: "VIDEO_FILE_NOT_FOUND",
-        message: `Video file does not exist: ${safeFilename}`,
-      });
-    }
-
-    if (!stats.isFile() || stats.size <= 0) {
-      return res.status(400).json({
-        success: false,
-        code: "INVALID_VIDEO_FILE",
-        message: "Video file is empty or invalid",
-      });
-    }
-
-    // ==========================================
-    // GET ACTUAL DURATION
-    // ==========================================
-
-    let actualDuration = Number(duration) || 0;
-
-    try {
-      actualDuration = await getVideoDuration(filePath);
-    } catch (error) {
-      console.warn("Could not determine video duration:", error.message);
-    }
-
-    // ==========================================
-    // VIDEO URL
-    // ==========================================
-
-    const localVideoUrl = videoUrl.trim() || getVideoUrl(safeFilename);
-
-    // ==========================================
-    // CREATE MONGODB RECORD
-    // ==========================================
-
-    const newVideo = await Video.create({
-      title:
-        title.trim() || getTitleFromFilename(safeFilename) || "Untitled Video",
-
-      publicId: `local-${Date.now()}`,
-
-      videoUrl: localVideoUrl,
-
-      sourceUrl: "",
-
-      filename: safeFilename,
-
-      thumbnailUrl: thumbnailUrl.trim(),
-
-      duration: actualDuration,
-
-      format: getExtension(safeFilename) || format || "mp4",
-
-      size: stats.size || Number(size) || 0,
-
-      cbc: cbc.trim(),
-    });
-
-    // ==========================================
-    // RESPONSE
-    // ==========================================
-
-    return res.status(201).json({
-      success: true,
-
-      message: "Local video created successfully",
-
-      video: {
-        id: newVideo._id,
-
-        title: newVideo.title,
-
-        videoUrl: newVideo.videoUrl,
-
-        sourceUrl: newVideo.sourceUrl,
-
-        filename: newVideo.filename,
-
-        thumbnailUrl: newVideo.thumbnailUrl,
-
-        duration: newVideo.duration,
-
-        format: newVideo.format,
-
-        size: newVideo.size,
-
-        cbc: newVideo.cbc,
-      },
-
-      watchUrl: `/watch/${newVideo._id}`,
-    });
-  } catch (error) {
-    console.error("CREATE LOCAL VIDEO ERROR:", error);
-
-    return res.status(500).json({
-      success: false,
-      code: "CREATE_LOCAL_VIDEO_FAILED",
-      message: error.message || "Failed to create local video",
-    });
-  }
-};
-
-// ==========================================
 // GET DOWNLOAD PROGRESS
 // ==========================================
 
@@ -923,5 +771,157 @@ export const streamVideo = async (req, res) => {
     }
 
     res.destroy();
+  }
+};
+
+// ==========================================
+// CREATE LOCAL VIDEO
+// ==========================================
+
+export const createLocalVideo = async (req, res) => {
+  try {
+    const {
+      title = "",
+      filename = "",
+      videoUrl = "",
+      thumbnailUrl = "",
+      duration = 0,
+      format = "mp4",
+      size = 0,
+      cbc = "",
+    } = req.body || {};
+
+    // ==========================================
+    // VALIDATE FILENAME
+    // ==========================================
+
+    if (!filename.trim()) {
+      return res.status(400).json({
+        success: false,
+        code: "MISSING_FILENAME",
+        message: "Filename is required",
+      });
+    }
+
+    // ==========================================
+    // SANITIZE FILENAME
+    // ==========================================
+
+    let safeFilename = sanitizeFilename(filename);
+
+    safeFilename = getSafeFilename(safeFilename, `video-${Date.now()}.mp4`);
+
+    // ==========================================
+    // FIND LOCAL FILE
+    // ==========================================
+
+    const filePath = path.join(VIDEO_FOLDER, safeFilename);
+
+    let stats;
+
+    try {
+      stats = await fs.promises.stat(filePath);
+    } catch {
+      return res.status(404).json({
+        success: false,
+        code: "VIDEO_FILE_NOT_FOUND",
+        message: `Video file does not exist: ${safeFilename}`,
+      });
+    }
+
+    if (!stats.isFile() || stats.size <= 0) {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_VIDEO_FILE",
+        message: "Video file is empty or invalid",
+      });
+    }
+
+    // ==========================================
+    // GET ACTUAL DURATION
+    // ==========================================
+
+    let actualDuration = Number(duration) || 0;
+
+    try {
+      actualDuration = await getVideoDuration(filePath);
+    } catch (error) {
+      console.warn("Could not determine video duration:", error.message);
+    }
+
+    // ==========================================
+    // VIDEO URL
+    // ==========================================
+
+    const localVideoUrl = videoUrl.trim() || getVideoUrl(safeFilename);
+
+    // ==========================================
+    // CREATE MONGODB RECORD
+    // ==========================================
+
+    const newVideo = await Video.create({
+      title:
+        title.trim() || getTitleFromFilename(safeFilename) || "Untitled Video",
+
+      publicId: `local-${Date.now()}`,
+
+      videoUrl: localVideoUrl,
+
+      sourceUrl: "",
+
+      filename: safeFilename,
+
+      thumbnailUrl: thumbnailUrl.trim(),
+
+      duration: actualDuration,
+
+      format: getExtension(safeFilename) || format || "mp4",
+
+      size: stats.size || Number(size) || 0,
+
+      cbc: cbc.trim(),
+    });
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
+
+    return res.status(201).json({
+      success: true,
+
+      message: "Local video created successfully",
+
+      video: {
+        id: newVideo._id,
+
+        title: newVideo.title,
+
+        videoUrl: newVideo.videoUrl,
+
+        sourceUrl: newVideo.sourceUrl,
+
+        filename: newVideo.filename,
+
+        thumbnailUrl: newVideo.thumbnailUrl,
+
+        duration: newVideo.duration,
+
+        format: newVideo.format,
+
+        size: newVideo.size,
+
+        cbc: newVideo.cbc,
+      },
+
+      watchUrl: `/watch/${newVideo._id}`,
+    });
+  } catch (error) {
+    console.error("CREATE LOCAL VIDEO ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      code: "CREATE_LOCAL_VIDEO_FAILED",
+      message: error.message || "Failed to create local video",
+    });
   }
 };
