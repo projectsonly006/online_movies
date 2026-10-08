@@ -11,6 +11,7 @@ import {
   streamVideo,
   deleteVideo,
   checkVideoAvailability,
+  getDownloadProgress,
 } from "../controllers/videoController.js";
 
 import { adminAuth } from "../middleware/adminAuth.js";
@@ -22,6 +23,8 @@ router.post("/upload", adminAuth, uploadVideo);
 router.post("/create-url", adminAuth, createVideoFromUrl);
 router.post("/create-local", adminAuth, createLocalVideo);
 router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
+
+router.get("/download-progress/:jobId", adminAuth, getDownloadProgress);
 
 router.put("/:id", adminAuth, updateVideo);
 router.delete("/:id", adminAuth, deleteVideo);
