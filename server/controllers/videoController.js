@@ -8,6 +8,89 @@ import { v4 as uuidv4 } from "uuid";
 import Video from "../models/Video.js";
 import { getVideoDuration } from "../utils/videoMetadata.js";
 import { setProgress, getProgress } from "../utils/downloadProgress.js";
+import multer from "multer";
+
+const upload = multer({
+  dest: VIDEO_FOLDER,
+});
+
+export const uploadVideo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        code: "NO_VIDEO_FILE",
+        message: "Video file is required",
+      });
+    }
+
+    const filename = req.file.filename;
+    const filePath = req.file.path;
+
+    const stats = await fs.promises.stat(filePath);
+
+    let duration = 0;
+
+    try {
+      duration = await getVideoDuration(filePath);
+    } catch (error) {
+      console.warn("Could not determine video duration:", error.message);
+    }
+
+    const videoUrl = getVideoUrl(filename);
+
+    const video = await Video.create({
+      title:
+        req.body.title?.trim() ||
+        getTitleFromFilename(req.file.originalname) ||
+        "Untitled Video",
+
+      publicId: `upload-${Date.now()}-${uuidv4().slice(0, 8)}`,
+
+      videoUrl,
+
+      sourceUrl: "",
+
+      filename,
+
+      thumbnailUrl: req.body.thumbnailUrl?.trim() || "",
+
+      duration,
+
+      format: getExtension(req.file.originalname),
+
+      size: stats.size,
+
+      cbc: req.body.cbc?.trim() || "",
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Video uploaded successfully",
+      video: {
+        id: video._id,
+        title: video.title,
+        videoUrl: video.videoUrl,
+        sourceUrl: video.sourceUrl,
+        filename: video.filename,
+        thumbnailUrl: video.thumbnailUrl,
+        duration: video.duration,
+        format: video.format,
+        size: video.size,
+        cbc: video.cbc,
+      },
+      watchUrl: `/watch/${video._id}`,
+    });
+  } catch (error) {
+    console.error("UPLOAD VIDEO ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      code: "UPLOAD_VIDEO_FAILED",
+      message: error.message || "Failed to upload video",
+    });
+  }
+};
 
 // ==========================================
 // PATH SETUP
