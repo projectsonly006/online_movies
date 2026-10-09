@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import multer from "multer";
-
+import { Readable } from "node:stream";
 import Video from "../models/Video.js";
 import { getVideoDuration } from "../utils/videoMetadata.js";
 import { setProgress, getProgress } from "../utils/downloadProgress.js";
@@ -1196,7 +1196,10 @@ export const streamVideo = async (req, res) => {
     }
 
     // 6. Forward the upstream response headers.
-    const contentType = upstream.headers.get("content-type") || "video/mp4";
+    const contentType =
+      video.format?.toLowerCase() === "mp4"
+        ? "video/mp4"
+        : upstream.headers.get("content-type") || "application/octet-stream";
 
     res.status(upstream.status);
 
