@@ -1043,167 +1043,405 @@ export const getDownloadProgress = async (req, res) => {
 // ======================================================
 
 export const streamVideo = async (req, res) => {
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  let readStream;
+
   try {
     const { id } = req.params;
 
+    console.log("\n========== STREAM VIDEO REQUEST ==========");
+    console.log("REQUEST ID:", requestId);
+    console.log("VIDEO ID:", id);
+    console.log("METHOD:", req.method);
+    console.log("URL:", req.originalUrl);
+    console.log("RANGE HEADER:", req.headers.range || "NONE");
+    console.log("USER AGENT:", req.headers["user-agent"]);
+    console.log("REQUEST TIME:", new Date().toISOString());
+    console.log("==========================================");
+
+    // ==========================================
+    // VALIDATE VIDEO ID
+    // ==========================================
+
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      console.error(`[${requestId}] INVALID VIDEO ID:`, id);
+
       return res.status(400).json({
         success: false,
-
         code: "INVALID_VIDEO_ID",
-
         message: "Invalid video ID",
       });
     }
 
+    // ==========================================
+    // FIND VIDEO IN MONGODB
+    // ==========================================
+
+    console.log(`[${requestId}] Searching MongoDB...`);
+
     const video = await Video.findById(id);
 
     if (!video) {
+      console.error(`[${requestId}] VIDEO NOT FOUND IN MONGODB`);
+
       return res.status(404).json({
         success: false,
-
         code: "VIDEO_NOT_FOUND",
-
         message: "Video not found",
       });
     }
 
+    console.log(`[${requestId}] VIDEO FOUND:`, {
+      id: video._id.toString(),
+      title: video.title,
+      filename: video.filename,
+      format: video.format,
+      expectedSize: video.size,
+    });
+
+    // ==========================================
+    // VALIDATE FILENAME
+    // ==========================================
+
     if (!video.filename) {
+      console.error(`[${requestId}] VIDEO FILENAME IS MISSING`);
+
       return res.status(404).json({
         success: false,
-
         code: "VIDEO_FILE_NOT_FOUND",
-
         message: "Video file is not available",
       });
     }
 
     const safeFilename = path.basename(video.filename);
-
     const filePath = path.join(VIDEO_FOLDER, safeFilename);
+
+    console.log(`[${requestId}] VIDEO FILENAME:`, video.filename);
+    console.log(`[${requestId}] VIDEO FOLDER:`, VIDEO_FOLDER);
+    console.log(`[${requestId}] FULL FILE PATH:`, filePath);
+
+    // ==========================================
+    // CHECK FILE
+    // ==========================================
 
     let stats;
 
     try {
       stats = await fs.promises.stat(filePath);
-    } catch {
+    } catch (error) {
+      console.error(`[${requestId}] FILE STAT FAILED:`, {
+        code: error.code,
+        message: error.message,
+        filePath,
+      });
+
       return res.status(404).json({
         success: false,
-
         code: "VIDEO_FILE_NOT_FOUND",
-
         message: "Video file is not available",
       });
     }
 
+    console.log(`[${requestId}] FILE INFORMATION:`, {
+      exists: true,
+      isFile: stats.isFile(),
+      actualSize: stats.size,
+      expectedSize: video.size,
+      sizeMatches: Number(video.size) === stats.size,
+      modifiedAt: stats.mtime,
+    });
+
     if (!stats.isFile() || stats.size <= 0) {
+      console.error(`[${requestId}] FILE IS EMPTY OR INVALID`);
+
       return res.status(404).json({
         success: false,
-
         code: "VIDEO_FILE_NOT_FOUND",
-
         message: "Video file is empty or unavailable",
       });
     }
 
     const fileSize = stats.size;
-
     const range = req.headers.range;
 
-    const extension = getExtension(safeFilename);
+    // ==========================================
+    // DETERMINE MIME TYPE
+    // ==========================================
+
+    const extension = path.extname(safeFilename).slice(1).toLowerCase();
 
     const mimeTypes = {
       mp4: "video/mp4",
-
       webm: "video/webm",
-
       mov: "video/quicktime",
-
       m4v: "video/x-m4v",
-
       mkv: "video/x-matroska",
-
       avi: "video/x-msvideo",
     };
 
-    const contentType = mimeTypes[extension] || "video/mp4";
+    const contentType = mimeTypes[extension] || "application/octet-stream";
 
-    // --------------------------------------------------
-    // No Range
-    // --------------------------------------------------
+    console.log(`[${requestId}] MEDIA INFORMATION:`, {
+      extension,
+      contentType,
+      fileSize,
+      rangeRequested: Boolean(range),
+    });
+
+    // ==========================================
+    // RESPONSE / CONNECTION LOGGING
+    // ==========================================
+
+    let streamEnded = false;
+    let responseFinished = false;
+
+    res.on("finish", () => {
+      responseFinished = true;
+
+      console.log(`[${requestId}] HTTP RESPONSE FINISHED`, {
+        statusCode: res.statusCode,
+        bytesWritten: res.socket?.bytesWritten,
+        time: new Date().toISOString(),
+      });
+    });
+
+    res.on("close", () => {
+      console.log(`[${requestId}] HTTP RESPONSE CLOSED`, {
+        statusCode: res.statusCode,
+        responseFinished,
+        streamEnded,
+        destroyed: res.destroyed,
+        time: new Date().toISOString(),
+      });
+
+      if (!responseFinished) {
+        console.warn(
+          `[${requestId}] CONNECTION CLOSED BEFORE RESPONSE FINISHED`,
+        );
+
+        if (readStream && !readStream.destroyed) {
+          readStream.destroy();
+        }
+      }
+    });
+
+    // ==========================================
+    // NO RANGE REQUEST
+    // ==========================================
 
     if (!range) {
+      console.log(`[${requestId}] FULL FILE REQUEST`);
+      console.log(`[${requestId}] HTTP STATUS: 200`);
+
       res.writeHead(200, {
         "Content-Type": contentType,
-
         "Content-Length": fileSize,
-
         "Accept-Ranges": "bytes",
-
-        "Cache-Control": "public, max-age=3600",
-
+        "Cache-Control": "no-cache, no-store, must-revalidate",
         "X-Content-Type-Options": "nosniff",
       });
 
-      fs.createReadStream(filePath).pipe(res);
+      readStream = fs.createReadStream(filePath);
 
+      readStream.on("open", () => {
+        console.log(`[${requestId}] FILE STREAM OPENED`);
+      });
+
+      readStream.on("end", () => {
+        streamEnded = true;
+        console.log(`[${requestId}] FILE STREAM ENDED`);
+      });
+
+      readStream.on("error", (error) => {
+        console.error(`[${requestId}] FILE STREAM ERROR:`, {
+          code: error.code,
+          message: error.message,
+          stack: error.stack,
+        });
+
+        if (!res.headersSent) {
+          res.status(500).end();
+        } else {
+          res.destroy(error);
+        }
+      });
+
+      readStream.pipe(res);
       return;
     }
 
-    // --------------------------------------------------
-    // Range
-    // --------------------------------------------------
+    // ==========================================
+    // PARSE BYTE RANGE
+    // ==========================================
 
-    const match = range.match(/bytes=(\d*)-(\d*)/);
+    console.log(`[${requestId}] PARSING RANGE:`, range);
 
-    if (!match) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+
+    if (!match || (!match[1] && !match[2])) {
+      console.error(`[${requestId}] INVALID RANGE HEADER`);
+
       res.setHeader("Content-Range", `bytes */${fileSize}`);
 
       return res.status(416).end();
     }
 
-    const start = match[1] ? Number(match[1]) : 0;
+    let start;
+    let end;
 
-    const end = match[2] ? Number(match[2]) : fileSize - 1;
+    // ==========================================
+    // SUFFIX RANGE: bytes=-500
+    // ==========================================
 
-    if (start >= fileSize || end >= fileSize || start > end) {
-      res.setHeader("Content-Range", `bytes */${fileSize}`);
+    if (match[1] === "") {
+      const suffixLength = Number(match[2]);
 
-      return res.status(416).end();
+      if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+        console.error(`[${requestId}] INVALID SUFFIX RANGE`);
+
+        res.setHeader("Content-Range", `bytes */${fileSize}`);
+
+        return res.status(416).end();
+      }
+
+      start = Math.max(0, fileSize - suffixLength);
+      end = fileSize - 1;
+    } else {
+      // ==========================================
+      // NORMAL RANGE: bytes=0-1023
+      // ==========================================
+
+      start = Number(match[1]);
+      end = match[2] === "" ? fileSize - 1 : Number(match[2]);
+
+      if (
+        !Number.isSafeInteger(start) ||
+        !Number.isSafeInteger(end) ||
+        start < 0 ||
+        start >= fileSize ||
+        end < start
+      ) {
+        console.error(`[${requestId}] INVALID BYTE RANGE`, {
+          start,
+          end,
+          fileSize,
+        });
+
+        res.setHeader("Content-Range", `bytes */${fileSize}`);
+
+        return res.status(416).end();
+      }
+
+      end = Math.min(end, fileSize - 1);
     }
+
+    // ==========================================
+    // CALCULATE RANGE SIZE
+    // ==========================================
 
     const chunkSize = end - start + 1;
 
+    console.log(`[${requestId}] RANGE DETAILS:`, {
+      requestedRange: range,
+      start,
+      end,
+      chunkSize,
+      totalFileSize: fileSize,
+      contentRange: `bytes ${start}-${end}/${fileSize}`,
+    });
+
+    // ==========================================
+    // SEND PARTIAL CONTENT HEADERS
+    // ==========================================
+
+    console.log(`[${requestId}] HTTP STATUS: 206 Partial Content`);
+
     res.writeHead(206, {
       "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-
       "Accept-Ranges": "bytes",
-
       "Content-Length": chunkSize,
-
       "Content-Type": contentType,
-
-      "Cache-Control": "public, max-age=3600",
-
+      "Cache-Control": "no-cache, no-store, must-revalidate",
       "X-Content-Type-Options": "nosniff",
     });
 
-    fs.createReadStream(filePath, {
+    console.log(`[${requestId}] RESPONSE HEADERS SENT:`, {
+      status: 206,
+      contentType,
+      contentLength: chunkSize,
+      contentRange: `bytes ${start}-${end}/${fileSize}`,
+    });
+
+    // ==========================================
+    // CREATE FILE STREAM
+    // ==========================================
+
+    readStream = fs.createReadStream(filePath, {
       start,
       end,
-    }).pipe(res);
+    });
+
+    readStream.on("open", () => {
+      console.log(`[${requestId}] FILE STREAM OPENED`, {
+        start,
+        end,
+      });
+    });
+
+    readStream.on("end", () => {
+      streamEnded = true;
+
+      console.log(`[${requestId}] FILE STREAM ENDED`, {
+        start,
+        end,
+        chunkSize,
+      });
+    });
+
+    readStream.on("error", (error) => {
+      console.error(`[${requestId}] FILE STREAM ERROR:`, {
+        code: error.code,
+        message: error.message,
+        stack: error.stack,
+        start,
+        end,
+      });
+
+      if (!res.headersSent) {
+        res.status(500).end();
+      } else {
+        res.destroy(error);
+      }
+    });
+
+    // ==========================================
+    // PIPE TO CLIENT
+    // ==========================================
+
+    readStream.pipe(res);
   } catch (error) {
-    console.error("STREAM VIDEO ERROR:", error);
+    console.error("========== STREAM VIDEO FATAL ERROR ==========");
+    console.error("VIDEO ID:", req.params.id);
+    console.error("ERROR:", error.message);
+    console.error("STACK:", error.stack);
+    console.error("==============================================");
+
+    if (readStream && !readStream.destroyed) {
+      readStream.destroy();
+    }
 
     if (!res.headersSent) {
       return res.status(500).json({
         success: false,
-
+        code: "STREAM_VIDEO_ERROR",
         message: "Failed to stream video",
       });
     }
 
-    res.destroy();
+    if (!res.destroyed) {
+      res.destroy(error);
+    }
   }
 };
 
@@ -1244,6 +1482,10 @@ export const createLocalVideo = async (req, res) => {
 
     try {
       stats = await fs.promises.stat(filePath);
+      console.log("FILE EXISTS:", stats.isFile());
+      console.log("FILE SIZE:", stats.size);
+      console.log("EXPECTED SIZE FROM DB:", video.size);
+      console.log("FILE MODIFIED:", stats.mtime);
     } catch {
       return res.status(404).json({
         success: false,
