@@ -1582,7 +1582,7 @@ export const getVideo = async (req, res) => {
 
     const video = await Video.findById(id)
       .select(
-        "-sourceUrl -createdAt -updatedAt -__v -size -format -duration _id",
+        "-sourceUrl -createdAt -updatedAt -__v -size -format -duration -_id",
       )
       .lean();
 
