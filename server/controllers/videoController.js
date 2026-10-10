@@ -1582,7 +1582,7 @@ export const getVideo = async (req, res) => {
       });
     }
 
-    const video = await Video.findById(id);
+    const video = await Video.findById(id).select("-sourceUrl").lean();
 
     if (!video) {
       return res.status(404).json({
