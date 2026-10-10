@@ -744,6 +744,8 @@ export const uploadVideo = async (req, res) => {
 // ======================================================
 
 export const createWatchableFromWeTransfer = async (req, res) => {
+  let jobId = null;
+
   try {
     const {
       sourceUrl = "",
@@ -760,151 +762,241 @@ export const createWatchableFromWeTransfer = async (req, res) => {
     if (!cleanSourceUrl) {
       return res.status(400).json({
         success: false,
+
+        code: "MISSING_SOURCE_URL",
+
         message: "WeTransfer URL is required",
       });
     }
 
+    // --------------------------------------------------
+    // IMPORTANT:
+    // Accept BOTH share URLs and CDN URLs.
+    // --------------------------------------------------
+
     if (!isSupportedWeTransferUrl(cleanSourceUrl)) {
       return res.status(400).json({
         success: false,
-        message: "Only supported WeTransfer URLs are allowed",
+
+        code: "INVALID_SOURCE",
+
+        message:
+          "Only WeTransfer share URLs or WeTransfer CDN URLs are supported",
       });
     }
 
-    const jobId = createJobId();
+    jobId = createJobId();
 
     setProgress(jobId, {
       status: "starting",
+
       percentage: 0,
+
       downloadedBytes: 0,
+
       totalBytes: Number(size) || 0,
+
       downloadedMB: 0,
+
       totalMB: Number((Number(size) / 1024 / 1024).toFixed(2)),
+
       speedMBps: 0,
+
       filename: filename || "",
-      title,
     });
 
-    // Return the job ID before downloading finishes.
-    res.status(202).json({
-      success: true,
-      message: "Video download started",
+    // --------------------------------------------------
+    // Filename
+    // --------------------------------------------------
+
+    let safeFilename = sanitizeFilename(filename);
+
+    if (!safeFilename) {
+      safeFilename = `video-${Date.now()}.mp4`;
+    }
+
+    safeFilename = getSafeFilename(safeFilename, `video-${Date.now()}.mp4`);
+
+    if (!path.extname(safeFilename)) {
+      safeFilename += `.${format || "mp4"}`;
+    }
+
+    const extension = getExtension(safeFilename);
+
+    const baseName = path.basename(safeFilename, path.extname(safeFilename));
+
+    safeFilename = `${baseName}-${Date.now()}-${uuidv4().slice(
+      0,
+      6,
+    )}.${extension}`;
+
+    const outputPath = path.join(VIDEO_FOLDER, safeFilename);
+
+    console.log("=================================");
+    console.log("CREATING WATCHABLE VIDEO");
+    console.log("=================================");
+    console.log("JOB ID:", jobId);
+    console.log("SOURCE:", cleanSourceUrl);
+    console.log("FILENAME:", safeFilename);
+    console.log("OUTPUT:", outputPath);
+
+    // --------------------------------------------------
+    // Download
+    // --------------------------------------------------
+
+    await downloadWeTransferVideo(
+      cleanSourceUrl,
+      outputPath,
+      Number(size) || 0,
+      safeFilename,
       jobId,
-      title,
+    );
+
+    // --------------------------------------------------
+    // Duration
+    // --------------------------------------------------
+
+    let actualDuration = Number(duration) || 0;
+
+    try {
+      actualDuration = await getVideoDuration(outputPath);
+    } catch (error) {
+      console.warn("Could not determine video duration:", error.message);
+    }
+
+    // --------------------------------------------------
+    // Verify file
+    // --------------------------------------------------
+
+    const stats = await fs.promises.stat(outputPath);
+
+    if (!stats.isFile() || stats.size <= 0) {
+      throw new Error("Downloaded video is invalid or empty.");
+    }
+
+    // --------------------------------------------------
+    // Create URL
+    // --------------------------------------------------
+
+    const videoUrl = getVideoUrl(safeFilename);
+
+    // --------------------------------------------------
+    // MongoDB
+    // --------------------------------------------------
+
+    const newVideo = await Video.create({
+      title:
+        title.trim() || getTitleFromFilename(safeFilename) || "Untitled Video",
+
+      publicId: `wetransfer-${Date.now()}-${uuidv4().slice(0, 8)}`,
+
+      videoUrl,
+
+      sourceUrl: cleanSourceUrl,
+
+      filename: safeFilename,
+
+      thumbnailUrl: "",
+
+      duration: actualDuration,
+
+      format: getExtension(safeFilename),
+
+      size: stats.size,
+
+      cbc: cbc.trim(),
     });
 
-    // Continue the download in the background.
-    setImmediate(async () => {
-      let outputPath = null;
+    // --------------------------------------------------
+    // Complete
+    // --------------------------------------------------
 
-      try {
-        let safeFilename = sanitizeFilename(filename);
+    setProgress(jobId, {
+      status: "completed",
 
-        if (!safeFilename) {
-          safeFilename = `video-${Date.now()}.mp4`;
-        }
+      percentage: 100,
 
-        safeFilename = getSafeFilename(safeFilename, `video-${Date.now()}.mp4`);
+      downloadedBytes: stats.size,
 
-        if (!path.extname(safeFilename)) {
-          safeFilename += `.${format || "mp4"}`;
-        }
+      totalBytes: stats.size,
 
-        const extension = getExtension(safeFilename);
-        const baseName = path.basename(
-          safeFilename,
-          path.extname(safeFilename),
-        );
+      downloadedMB: Number((stats.size / 1024 / 1024).toFixed(2)),
 
-        safeFilename = `${baseName}-${Date.now()}-${uuidv4().slice(0, 6)}.${extension}`;
+      totalMB: Number((stats.size / 1024 / 1024).toFixed(2)),
 
-        outputPath = path.join(VIDEO_FOLDER, safeFilename);
+      speedMBps: 0,
 
-        await downloadWeTransferVideo(
-          cleanSourceUrl,
-          outputPath,
-          Number(size) || 0,
-          safeFilename,
-          jobId,
-        );
+      filename: safeFilename,
 
-        let actualDuration = Number(duration) || 0;
+      videoId: newVideo._id.toString(),
+    });
 
-        try {
-          actualDuration = await getVideoDuration(outputPath);
-        } catch (error) {
-          console.warn("Could not determine video duration:", error.message);
-        }
+    console.log("=================================");
+    console.log("VIDEO READY");
+    console.log("=================================");
+    console.log("VIDEO ID:", newVideo._id);
+    console.log("VIDEO URL:", videoUrl);
+    console.log("FILE:", safeFilename);
+    console.log("SIZE:", stats.size);
+    console.log("DURATION:", actualDuration);
 
-        const stats = await fs.promises.stat(outputPath);
+    return res.status(201).json({
+      success: true,
 
-        if (!stats.isFile() || stats.size <= 0) {
-          throw new Error("Downloaded video is invalid or empty.");
-        }
+      message: "Video downloaded and ready to watch",
 
-        const videoUrl = getVideoUrl(safeFilename);
+      jobId,
 
-        const newVideo = await Video.create({
-          title:
-            String(title).trim() ||
-            getTitleFromFilename(safeFilename) ||
-            "Untitled Video",
+      video: {
+        id: newVideo._id,
 
-          publicId: `wetransfer-${Date.now()}-${uuidv4().slice(0, 8)}`,
+        title: newVideo.title,
 
-          videoUrl,
-          sourceUrl: cleanSourceUrl,
-          filename: safeFilename,
-          thumbnailUrl: "",
-          duration: actualDuration,
-          format: getExtension(safeFilename),
-          size: stats.size,
-          cbc: String(cbc).trim(),
-        });
+        videoUrl: newVideo.videoUrl,
 
-        setProgress(jobId, {
-          status: "completed",
-          percentage: 100,
-          downloadedBytes: stats.size,
-          totalBytes: stats.size,
-          downloadedMB: Number((stats.size / 1024 / 1024).toFixed(2)),
-          totalMB: Number((stats.size / 1024 / 1024).toFixed(2)),
-          speedMBps: 0,
-          filename: safeFilename,
-          title: newVideo.title,
-          videoId: newVideo._id.toString(),
-        });
+        sourceUrl: newVideo.sourceUrl,
 
-        console.log("VIDEO READY:", newVideo._id);
-      } catch (error) {
-        console.error("BACKGROUND DOWNLOAD ERROR:", error);
+        filename: newVideo.filename,
 
-        if (outputPath) {
-          try {
-            await fs.promises.unlink(outputPath);
-          } catch {
-            // The file may not exist or may already be removed.
-          }
-        }
+        thumbnailUrl: newVideo.thumbnailUrl,
 
-        setProgress(jobId, {
-          status: "error",
-          percentage: 0,
-          error: error.message || "Download failed",
-          filename,
-          title,
-        });
-      }
+        duration: newVideo.duration,
+
+        format: newVideo.format,
+
+        size: newVideo.size,
+
+        cbc: newVideo.cbc,
+      },
+
+      watchUrl: `/watch/${newVideo._id}`,
     });
   } catch (error) {
     console.error("CREATE WATCHABLE VIDEO ERROR:", error);
 
-    if (!res.headersSent) {
-      return res.status(500).json({
-        success: false,
-        message: error.message || "Failed to start video download",
+    if (jobId) {
+      setProgress(jobId, {
+        status: "error",
+
+        percentage: 0,
+
+        error: error.message || "Download failed",
+
+        filename: req.body?.filename || "",
+
+        videoId: null,
       });
     }
+
+    return res.status(500).json({
+      success: false,
+
+      code: "VIDEO_DOWNLOAD_FAILED",
+
+      message: error.message || "Failed to download video",
+
+      jobId,
+    });
   }
 };
 
