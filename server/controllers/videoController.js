@@ -1541,7 +1541,7 @@ export const createVideoFromUrl = async (req, res) => {
 export const getVideos = async (req, res) => {
   try {
     const videos = await Video.find()
-      .select("-sourceUrl -createdAt -updatedAt")
+      .select("-sourceUrl -createdAt -updatedAt -__v")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -1578,7 +1578,9 @@ export const getVideo = async (req, res) => {
       });
     }
 
-    const video = await Video.findById(id).select("-sourceUrl").lean();
+    const video = await Video.findById(id)
+      .select("-sourceUrl -createdAt -updatedAt -__v")
+      .lean();
 
     if (!video) {
       return res.status(404).json({
