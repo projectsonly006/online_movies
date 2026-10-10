@@ -1541,16 +1541,13 @@ export const createVideoFromUrl = async (req, res) => {
 export const getVideos = async (req, res) => {
   try {
     const videos = await Video.find()
-      .sort({
-        createdAt: -1,
-      })
+      .select("-sourceUrl")
+      .sort({ createdAt: -1 })
       .lean();
 
     return res.json({
       success: true,
-
       videos,
-
       count: videos.length,
     });
   } catch (error) {
@@ -1558,7 +1555,6 @@ export const getVideos = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-
       message: "Failed to get videos",
     });
   }
