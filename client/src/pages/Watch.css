@@ -1213,7 +1213,7 @@ body {
   }
 
   .skip-button {
-    display: none;
+    /* display: none; */
   }
 
   .player-button {
