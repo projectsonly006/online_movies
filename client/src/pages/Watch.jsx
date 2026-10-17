@@ -681,9 +681,11 @@ function Watch() {
 
           <p>{error}</p>
 
-          <button onClick={() => window.location.reload()}>Try Again</button>
+          <div>
+            <button onClick={() => window.location.reload()}>Try Again</button>
 
-          <button onClick={() => navigate("/")}>← Back to Home</button>
+            <button onClick={() => navigate("/")}>← Back to Home</button>
+          </div>
         </div>
       </main>
     );
