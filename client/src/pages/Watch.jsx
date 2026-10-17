@@ -344,7 +344,7 @@ function Watch() {
 
       case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
         setError(
-          "The video format is not supported or the video file could not be loaded.",
+          "Video link expired or network error. Please contact the admini",
         );
         break;
 
