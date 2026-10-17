@@ -681,7 +681,7 @@ function Watch() {
 
           <p>{error}</p>
 
-          <div>
+          <div className="err-btns">
             <button onClick={() => window.location.reload()}>Try Again</button>
 
             <button onClick={() => navigate("/")}>← Back to Home</button>
