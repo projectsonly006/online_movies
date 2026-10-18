@@ -17,30 +17,14 @@ import { setProgress, getProgress } from "../utils/downloadProgress.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const VIDEO_FOLDER = path.resolve(
-  process.env.VIDEO_STORAGE_DIR || path.join(process.cwd(), "data", "videos"),
-);
+const VIDEO_FOLDER = path.join(__dirname, "..", "videos");
 
 const SERVER_URL =
   process.env.SERVER_URL || "https://online-movies-uebc.onrender.com";
 
-try {
-  await fs.promises.mkdir(VIDEO_FOLDER, {
-    recursive: true,
-  });
-
-  await fs.promises.access(VIDEO_FOLDER, fs.constants.W_OK);
-
-  console.log("[VIDEO STORAGE READY]", VIDEO_FOLDER);
-} catch (error) {
-  console.error("[VIDEO STORAGE ERROR]", {
-    path: VIDEO_FOLDER,
-    code: error.code,
-    message: error.message,
-  });
-
-  throw error;
-}
+await fs.promises.mkdir(VIDEO_FOLDER, {
+  recursive: true,
+});
 
 // ======================================================
 // MULTER
