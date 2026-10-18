@@ -1039,16 +1039,15 @@ export const getDownloadProgress = async (req, res) => {
 };
 
 // ======================================================
-// STREAM LOCAL VIDEO
+// STREAM VIDEO: LOCAL FILE FIRST, WETRANSFER FALLBACK
 // ======================================================
 
 export const streamVideo = async (req, res) => {
-  let controller;
-  let upstreamStream;
-  let localStream;
+  const requestId = `${Date.now()}`;
 
   try {
     const { id } = req.params;
+    const range = req.headers.range;
 
     if (!mongoose.Types.ObjectId.isValid(id || "")) {
       return res.status(400).json({
@@ -1066,7 +1065,10 @@ export const streamVideo = async (req, res) => {
       });
     }
 
-    // 1. Prefer the local file if it exists.
+    // --------------------------------------------------
+    // 1. TRY THE RESTORED LOCAL FILE FIRST
+    // --------------------------------------------------
+
     if (video.filename) {
       const filename = path.basename(video.filename);
       const filePath = path.join(VIDEO_FOLDER, filename);
@@ -1075,209 +1077,228 @@ export const streamVideo = async (req, res) => {
         const stats = await fs.promises.stat(filePath);
 
         if (stats.isFile() && stats.size > 0) {
-          const size = stats.size;
-          const ext = path.extname(filename).toLowerCase();
-
-          const types = {
-            ".mp4": "video/mp4",
-            ".webm": "video/webm",
-            ".mov": "video/quicktime",
-            ".m4v": "video/x-m4v",
-            ".ogv": "video/ogg",
-          };
-
+          const fileSize = stats.size;
           let start = 0;
-          let end = size - 1;
-          let status = 200;
+          let end = fileSize - 1;
 
-          if (req.headers.range) {
-            const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+          if (range) {
+            const match = /^bytes=(\d*)-(\d*)$/.exec(range);
 
             if (!match || (!match[1] && !match[2])) {
-              res.setHeader("Content-Range", `bytes */${size}`);
-              return res.status(416).end();
+              return res
+                .status(416)
+                .set("Content-Range", `bytes */${fileSize}`)
+                .end();
             }
 
             if (!match[1]) {
-              const suffix = Number(match[2]);
+              const suffixLength = Number(match[2]);
 
-              if (!Number.isSafeInteger(suffix) || suffix <= 0) {
-                res.setHeader("Content-Range", `bytes */${size}`);
-                return res.status(416).end();
+              if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+                return res
+                  .status(416)
+                  .set("Content-Range", `bytes */${fileSize}`)
+                  .end();
               }
 
-              start = Math.max(0, size - suffix);
+              start = Math.max(0, fileSize - suffixLength);
             } else {
               start = Number(match[1]);
-              end = match[2] ? Number(match[2]) : size - 1;
+
+              if (match[2]) {
+                end = Number(match[2]);
+              }
             }
 
             if (
               !Number.isSafeInteger(start) ||
               !Number.isSafeInteger(end) ||
               start < 0 ||
-              start >= size ||
+              start >= fileSize ||
               end < start
             ) {
-              res.setHeader("Content-Range", `bytes */${size}`);
-              return res.status(416).end();
+              return res
+                .status(416)
+                .set("Content-Range", `bytes */${fileSize}`)
+                .end();
             }
 
-            end = Math.min(end, size - 1);
-            status = 206;
-
-            res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
+            end = Math.min(end, fileSize - 1);
           }
 
-          res.status(status);
-          res.setHeader(
-            "Content-Type",
-            types[ext] || "application/octet-stream",
-          );
-          res.setHeader("Accept-Ranges", "bytes");
-          res.setHeader("Content-Length", end - start + 1);
+          const contentType =
+            video.format?.toLowerCase() === "mp4"
+              ? "video/mp4"
+              : "application/octet-stream";
 
-          localStream = fs.createReadStream(filePath, {
+          res.set({
+            "Content-Type": contentType,
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+          });
+
+          if (range) {
+            res.status(206);
+            res.set({
+              "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+              "Content-Length": String(end - start + 1),
+            });
+          } else {
+            res.status(200);
+            res.set("Content-Length", String(fileSize));
+          }
+
+          console.log(`[${requestId}] LOCAL STREAM`, {
+            filePath,
+            fileSize,
+            range: range || "none",
+            status: range ? 206 : 200,
+          });
+
+          const fileStream = fs.createReadStream(filePath, {
             start,
             end,
           });
 
-          localStream.on("error", (err) => {
-            console.error("LOCAL STREAM ERROR:", err.message);
+          fileStream.on("error", (error) => {
+            console.error("LOCAL VIDEO STREAM ERROR:", error);
 
             if (!res.headersSent) {
               res.status(500).end();
             } else {
-              res.destroy(err);
+              res.destroy(error);
             }
           });
 
-          res.on("close", () => localStream?.destroy());
+          res.on("close", () => {
+            if (!res.writableEnded) {
+              fileStream.destroy();
+            }
+          });
 
-          return localStream.pipe(res);
+          return fileStream.pipe(res);
         }
-      } catch (err) {
-        if (err.code !== "ENOENT") {
-          throw err;
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          throw error;
         }
       }
     }
 
-    // 2. Local file missing: use the remote source.
-    // Only permit HTTPS WeTransfer URLs.
+    // --------------------------------------------------
+    // 2. LOCAL FILE MISSING: PRESERVE WETRANSFER FALLBACK
+    // --------------------------------------------------
+
+    console.log(
+      `[${requestId}] Local file missing; trying WeTransfer`,
+      video.filename,
+    );
+
     const sourceUrl = video.sourceUrl;
 
     if (!sourceUrl) {
       return res.status(404).json({
         success: false,
-        code: "VIDEO_SOURCE_MISSING",
-        message: "Video file is missing and no remote source URL is saved.",
+        code: "VIDEO_FILE_NOT_FOUND",
+        message: "Local video file and source URL are unavailable",
       });
     }
 
-    let parsed;
+    let parsedUrl;
 
     try {
-      parsed = new URL(sourceUrl);
+      parsedUrl = new URL(sourceUrl);
     } catch {
       return res.status(400).json({
         success: false,
-        message: "Invalid source URL",
+        message: "Invalid video source URL",
       });
     }
 
-    const host = parsed.hostname.toLowerCase();
+    const hostname = parsedUrl.hostname.toLowerCase();
 
-    const allowedHost =
-      host === "wetransfer.com" ||
-      host.endsWith(".wetransfer.com") ||
-      host === "wetransfer.net" ||
-      host.endsWith(".wetransfer.net");
-
-    if (parsed.protocol !== "https:" || !allowedHost) {
+    if (
+      parsedUrl.protocol !== "https:" ||
+      !(
+        hostname === "wetransfer.com" ||
+        hostname.endsWith(".wetransfer.com") ||
+        hostname === "wetransfer.net" ||
+        hostname.endsWith(".wetransfer.net")
+      )
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Unsupported remote video source",
+        message: "Unsupported video source",
       });
     }
 
-    controller = new AbortController();
-
     const headers = {
-      "User-Agent": "Mozilla/5.0",
       Accept: "*/*",
+      "User-Agent": "Mozilla/5.0",
     };
 
-    if (req.headers.range) {
-      headers.Range = req.headers.range;
+    if (range) {
+      headers.Range = range;
     }
 
-    // Resolve WeTransfer share URLs to the actual download URL.
-    // The resolver must only return trusted WeTransfer CDN URLs.
-    const downloadUrl = await resolveDownloadUrl(sourceUrl);
+    const controller = new AbortController();
 
-    const upstream = await fetch(downloadUrl, {
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        controller.abort();
+      }
+    });
+
+    const upstream = await fetch(sourceUrl, {
+      method: "GET",
       headers,
       redirect: "follow",
       signal: controller.signal,
     });
 
-    const finalUrl = new URL(upstream.url);
-
-    if (
-      finalUrl.protocol !== "https:" ||
-      !(
-        finalUrl.hostname === "wetransfer.net" ||
-        finalUrl.hostname.endsWith(".wetransfer.net")
-      )
-    ) {
-      await upstream.body?.cancel().catch(() => {});
-
-      return res.status(502).json({
-        success: false,
-        message: "Unexpected remote download destination",
-      });
-    }
-
-    const contentType = (
-      upstream.headers.get("content-type") || ""
-    ).toLowerCase();
-
     if (!upstream.ok) {
       await upstream.body?.cancel().catch(() => {});
 
-      return res.status(502).json({
-        success: false,
-        code: "REMOTE_STREAM_FAILED",
-        message: `Remote video returned HTTP ${upstream.status}. The source may have expired.`,
-      });
-    }
+      if (upstream.status === 416) {
+        const contentRange = upstream.headers.get("content-range");
 
-    if (
-      !upstream.body ||
-      contentType.includes("text/html") ||
-      contentType.includes("application/json") ||
-      contentType.includes("text/plain")
-    ) {
-      await upstream.body?.cancel().catch(() => {});
+        if (contentRange) {
+          res.set("Content-Range", contentRange);
+        }
+
+        return res.status(416).end();
+      }
 
       return res.status(502).json({
         success: false,
-        code: "REMOTE_NOT_VIDEO",
+        code: "SOURCE_UNAVAILABLE",
         message:
-          "WeTransfer returned a webpage or non-video response instead of media.",
+          "WeTransfer could not provide the video. " +
+          "Restore the file or obtain a fresh download URL.",
       });
     }
 
-    res.status(upstream.status);
-    res.setHeader(
-      "Content-Type",
+    if (!upstream.body) {
+      return res.status(502).json({
+        success: false,
+        message: "Empty response from WeTransfer",
+      });
+    }
+
+    const contentType =
       video.format?.toLowerCase() === "mp4"
         ? "video/mp4"
-        : contentType || "application/octet-stream",
-    );
-    res.setHeader("Accept-Ranges", "bytes");
-    res.setHeader("Cache-Control", "no-store");
+        : upstream.headers.get("content-type") || "application/octet-stream";
+
+    res.status(upstream.status);
+
+    res.set({
+      "Content-Type": contentType,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    });
 
     for (const header of [
       "content-length",
@@ -1288,50 +1309,43 @@ export const streamVideo = async (req, res) => {
       const value = upstream.headers.get(header);
 
       if (value) {
-        res.setHeader(
-          header.replace(/(^|-)([a-z])/g, (_, dash, c) => c.toUpperCase()),
+        res.set(
+          header.replace(
+            /(^|-)(\w)/g,
+            (_, dash, char) => dash + char.toUpperCase(),
+          ),
           value,
         );
       }
     }
 
-    upstreamStream = Readable.fromWeb(upstream.body);
+    const stream = Readable.fromWeb(upstream.body);
 
-    upstreamStream.on("error", (err) => {
-      console.error("REMOTE STREAM ERROR:", err.message);
+    stream.on("error", (error) => {
+      console.error(`[${requestId}] Upstream stream error:`, error);
 
       if (!res.destroyed) {
-        res.destroy(err);
+        res.destroy(error);
       }
     });
 
-    res.on("close", () => {
-      if (!res.writableEnded) {
-        controller?.abort();
-        upstreamStream?.destroy();
-      }
-    });
-
-    return upstreamStream.pipe(res);
-  } catch (err) {
-    console.error("VIDEO STREAM ERROR:", err);
-
-    if (controller && !controller.signal.aborted) {
-      controller.abort();
+    return stream.pipe(res);
+  } catch (error) {
+    if (error.name === "AbortError") {
+      return;
     }
 
-    localStream?.destroy();
-    upstreamStream?.destroy();
+    console.error("STREAM VIDEO ERROR:", error);
 
     if (!res.headersSent && !res.destroyed) {
       return res.status(502).json({
         success: false,
-        message: "Failed to stream video from its source",
+        message: "Failed to stream video",
       });
     }
 
     if (!res.destroyed) {
-      res.destroy(err);
+      res.destroy(error);
     }
   }
 };
