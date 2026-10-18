@@ -43,114 +43,79 @@ function Watch() {
   // ======================================================
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
 
     const fetchVideo = async () => {
+      const startedAt = performance.now();
+
       try {
         setLoading(true);
         setError("");
         setVideoExpired(false);
         setVideo(null);
 
-        // console.log("=================================");
-        // console.log("LOADING VIDEO");
-        // console.log("VIDEO ID:", id);
-        // console.log("=================================");
-
         if (!id) {
           setError("Video ID is missing.");
           return;
         }
 
-        // ==================================================
-        // GET VIDEO FROM BACKEND
-        // ==================================================
-
-        const url = api(`/api/videos/${id}`);
-
-        // console.log("VIDEO API URL:", url);
-
-        const response = await fetch(url, {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            Accept: "application/json",
-          },
-        });
-
-        let data = {};
+        const timeoutId = setTimeout(() => {
+          controller.abort();
+        }, 20000);
 
         try {
-          data = await response.json();
-        } catch {
-          data = {};
+          const response = await fetch(api(`/api/videos/${id}`), {
+            method: "GET",
+            cache: "no-store",
+            headers: {
+              Accept: "application/json",
+            },
+            signal: controller.signal,
+          });
+
+          const data = await response.json().catch(() => ({}));
+
+          console.log(
+            `[Watch] Metadata request: ${Math.round(
+              performance.now() - startedAt,
+            )} ms`,
+            { status: response.status },
+          );
+
+          if (!response.ok) {
+            if (response.status === 404) {
+              setVideoExpired(true);
+              return;
+            }
+
+            throw new Error(
+              data.message || "Failed to load video from server.",
+            );
+          }
+
+          if (!data.video) {
+            throw new Error("The server returned no video information.");
+          }
+
+          setVideo(data.video);
+        } finally {
+          clearTimeout(timeoutId);
         }
-
-        // console.log("VIDEO API STATUS:", response.status);
-        // console.log("VIDEO API RESPONSE:", data);
-
-        if (cancelled) {
-          return;
-        }
-
-        // ==================================================
-        // VIDEO NOT FOUND
-        // ==================================================
-
-        if (response.status === 404) {
-          setVideoExpired(true);
-          return;
-        }
-
-        // ==================================================
-        // OTHER BACKEND ERROR
-        // ==================================================
-
-        if (!response.ok) {
-          throw new Error(data?.message || "Failed to load video from server.");
-        }
-
-        // ==================================================
-        // IMPORTANT
-        //
-        // Backend returns:
-        //
-        // {
-        //   success: true,
-        //   video: {...}
-        // }
-        //
-        // Therefore use data.video
-        // ==================================================
-
-        if (!data?.video) {
-          // console.error("VIDEO OBJECT MISSING:", data);
-
-          throw new Error("The server did not return valid video information.");
-        }
-
-        // console.log("VIDEO OBJECT:", data.video);
-
-        setVideo(data.video);
       } catch (error) {
-        if (cancelled) {
-          return;
+        if (error.name === "AbortError") {
+          setError("The server took too long to respond. Please try again.");
+        } else {
+          setError(error.message || "Failed to load video.");
         }
-
-        console.error("FETCH VIDEO ERROR:", error);
-
-        setError(error.message || "Failed to load video.");
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     };
 
     fetchVideo();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [id]);
 

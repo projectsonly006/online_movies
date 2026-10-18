@@ -1043,21 +1043,9 @@ export const getDownloadProgress = async (req, res) => {
 // ======================================================
 
 export const streamVideo = async (req, res) => {
-  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  const controller = new AbortController();
-  let upstreamStream = null;
-
   try {
     const { id } = req.params;
-    const range = req.headers.range;
 
-    console.log(`\n[${requestId}] ===== VIDEO STREAM REQUEST =====`);
-    console.log(`[${requestId}] Video ID:`, id);
-    console.log(`[${requestId}] Range:`, range || "none");
-    console.log(`[${requestId}] Time:`, new Date().toISOString());
-
-    // 1. Validate video ID
     if (!mongoose.Types.ObjectId.isValid(id || "")) {
       return res.status(400).json({
         success: false,
@@ -1065,8 +1053,7 @@ export const streamVideo = async (req, res) => {
       });
     }
 
-    // 2. Load video metadata from MongoDB
-    const video = await Video.findById(id);
+    const video = await Video.findById(id).select("filename format").lean();
 
     if (!video) {
       return res.status(404).json({
@@ -1075,210 +1062,143 @@ export const streamVideo = async (req, res) => {
       });
     }
 
-    // 3. Use the original WeTransfer download URL.
-    // Do not depend on a local file or VIDEO_FOLDER.
-    const sourceUrl = video.sourceUrl;
+    // Only serve files inside VIDEO_FOLDER.
+    const filename = path.basename(video.filename || "");
 
-    if (!sourceUrl) {
-      return res.status(404).json({
+    if (!filename || filename !== video.filename) {
+      return res.status(400).json({
         success: false,
-        message: "Video source URL is missing",
+        message: "Invalid video filename",
       });
     }
 
-    let parsedUrl;
+    const filePath = path.join(VIDEO_FOLDER, filename);
+
+    let stats;
 
     try {
-      parsedUrl = new URL(sourceUrl);
+      stats = await fs.promises.stat(filePath);
     } catch {
-      return res.status(400).json({
+      return res.status(503).json({
         success: false,
-        message: "Invalid video source URL",
+        code: "VIDEO_FILE_NOT_AVAILABLE",
+        message:
+          "The saved video file is unavailable. Check persistent storage.",
       });
     }
 
-    // Only allow HTTPS WeTransfer source URLs.
-    if (
-      parsedUrl.protocol !== "https:" ||
-      !(
-        parsedUrl.hostname === "wetransfer.com" ||
-        parsedUrl.hostname.endsWith(".wetransfer.com") ||
-        parsedUrl.hostname.endsWith(".wetransfer.net")
-      )
-    ) {
-      return res.status(400).json({
+    if (!stats.isFile() || stats.size === 0) {
+      return res.status(404).json({
         success: false,
-        message: "Unsupported video source",
+        message: "Video file is empty or unavailable",
       });
     }
 
-    console.log(`[${requestId}] Title:`, video.title);
-    console.log(`[${requestId}] Format:`, video.format);
-    console.log(`[${requestId}] Forwarding request to WeTransfer`);
+    const fileSize = stats.size;
+    const range = req.headers.range;
 
-    // 4. Forward the browser's byte-range request.
-    const headers = {
-      Accept: "video/*, application/octet-stream, */*",
-      "User-Agent": "OnlineMovies/1.0",
-    };
-
-    if (range) {
-      headers.Range = range;
-    }
-
-    // Fetch follows redirects to the actual file location.
-    const upstream = await fetch(sourceUrl, {
-      method: "GET",
-      headers,
-      redirect: "follow",
-      signal: controller.signal,
-    });
-
-    console.log(`[${requestId}] Upstream status:`, upstream.status);
-    console.log(
-      `[${requestId}] Upstream content type:`,
-      upstream.headers.get("content-type"),
-    );
-    console.log(
-      `[${requestId}] Upstream content length:`,
-      upstream.headers.get("content-length"),
-    );
-    console.log(
-      `[${requestId}] Upstream content range:`,
-      upstream.headers.get("content-range"),
-    );
-
-    // 5. Handle upstream errors, including expired URLs.
-    if (!upstream.ok) {
-      const status = upstream.status;
-
-      console.error(`[${requestId}] Upstream request failed:`, status);
-
-      if (upstream.body) {
-        await upstream.body.cancel().catch(() => {});
-      }
-
-      if (status === 416) {
-        const contentRange = upstream.headers.get("content-range");
-
-        if (contentRange) {
-          res.setHeader("Content-Range", contentRange);
-        }
-
-        return res.status(416).end();
-      }
-
-      if (status === 401 || status === 403 || status === 404) {
-        return res.status(502).json({
-          success: false,
-          code:
-            status === 403 || status === 401
-              ? "SOURCE_URL_EXPIRED_OR_FORBIDDEN"
-              : "SOURCE_FILE_NOT_FOUND",
-          message:
-            status === 403 || status === 401
-              ? "The WeTransfer download URL may have expired. Obtain a fresh source URL."
-              : "The video is no longer available from its source.",
-        });
-      }
-
-      return res.status(502).json({
-        success: false,
-        message: "Unable to retrieve video from WeTransfer",
-      });
-    }
-
-    if (!upstream.body) {
-      return res.status(502).json({
-        success: false,
-        message: "WeTransfer returned an empty response",
-      });
-    }
-
-    // 6. Forward the upstream response headers.
     const contentType =
       video.format?.toLowerCase() === "mp4"
         ? "video/mp4"
-        : upstream.headers.get("content-type") || "application/octet-stream";
-
-    res.status(upstream.status);
+        : "application/octet-stream";
 
     res.setHeader("Content-Type", contentType);
     res.setHeader("Accept-Ranges", "bytes");
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
 
-    const contentLength = upstream.headers.get("content-length");
+    // Return the complete file if the browser did not request a range.
+    if (!range) {
+      res.setHeader("Content-Length", fileSize);
 
-    const contentRange = upstream.headers.get("content-range");
+      const stream = fs.createReadStream(filePath);
 
-    if (contentLength) {
-      res.setHeader("Content-Length", contentLength);
+      stream.on("error", (error) => {
+        console.error("VIDEO FILE STREAM ERROR:", error);
+
+        if (!res.headersSent) {
+          res.status(500).end();
+        } else {
+          res.destroy(error);
+        }
+      });
+
+      return stream.pipe(res);
     }
 
-    if (contentRange) {
-      res.setHeader("Content-Range", contentRange);
+    // Support standard single byte-range requests.
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+
+    if (!match || (!match[1] && !match[2])) {
+      res.setHeader("Content-Range", `bytes */${fileSize}`);
+      return res.status(416).end();
     }
 
-    const lastModified = upstream.headers.get("last-modified");
+    let start;
+    let end;
 
-    if (lastModified) {
-      res.setHeader("Last-Modified", lastModified);
+    if (!match[1]) {
+      const suffixLength = Number(match[2]);
+
+      if (suffixLength <= 0) {
+        res.setHeader("Content-Range", `bytes */${fileSize}`);
+        return res.status(416).end();
+      }
+
+      start = Math.max(0, fileSize - suffixLength);
+      end = fileSize - 1;
+    } else {
+      start = Number(match[1]);
+      end = match[2] ? Number(match[2]) : fileSize - 1;
     }
 
-    const etag = upstream.headers.get("etag");
-
-    if (etag) {
-      res.setHeader("ETag", etag);
+    if (
+      !Number.isSafeInteger(start) ||
+      !Number.isSafeInteger(end) ||
+      start < 0 ||
+      start >= fileSize ||
+      end < start
+    ) {
+      res.setHeader("Content-Range", `bytes */${fileSize}`);
+      return res.status(416).end();
     }
 
-    // 7. Stream without saving the file on Render.
-    upstreamStream = Readable.fromWeb(upstream.body);
+    end = Math.min(end, fileSize - 1);
 
-    upstreamStream.on("error", (error) => {
-      console.error(`[${requestId}] Upstream stream error:`, error.message);
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+    res.setHeader("Content-Length", end - start + 1);
 
-      if (!res.destroyed) {
+    const stream = fs.createReadStream(filePath, { start, end });
+
+    stream.on("error", (error) => {
+      console.error("VIDEO RANGE STREAM ERROR:", error);
+
+      if (!res.headersSent) {
+        res.status(500).end();
+      } else {
         res.destroy(error);
       }
     });
 
     res.on("close", () => {
-      console.log(`[${requestId}] Browser connection closed`, {
-        writableEnded: res.writableEnded,
-        destroyed: res.destroyed,
-      });
-
-      // Stop fetching if the client disconnects early.
       if (!res.writableEnded) {
-        controller.abort();
-        upstreamStream?.destroy();
+        stream.destroy();
       }
     });
 
-    upstreamStream.on("end", () => {
-      console.log(`[${requestId}] Upstream stream ended`);
-    });
-
-    upstreamStream.pipe(res);
+    return stream.pipe(res);
   } catch (error) {
-    if (error.name === "AbortError") {
-      console.log(`[${requestId}] Upstream fetch aborted`);
-      return;
-    }
+    console.error("STREAM VIDEO ERROR:", error);
 
-    console.error(`[${requestId}] VIDEO STREAM ERROR:`, error);
-
-    if (!res.headersSent && !res.destroyed) {
-      return res.status(502).json({
+    if (!res.headersSent) {
+      return res.status(500).json({
         success: false,
-        message: "Failed to stream video from its source",
+        message: "Failed to stream video",
       });
     }
 
-    if (!res.destroyed) {
-      res.destroy(error);
-    }
+    res.destroy(error);
   }
 };
 
@@ -1577,44 +1497,47 @@ export const getVideos = async (req, res) => {
 // ======================================================
 
 export const getVideo = async (req, res) => {
+  const startedAt = Date.now();
+
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-
         code: "INVALID_VIDEO_ID",
-
         message: "Invalid video ID",
       });
     }
 
     const video = await Video.findById(id)
       .select("-sourceUrl -createdAt -updatedAt -publicId")
+      .maxTimeMS(10000)
       .lean();
+
+    console.log(
+      `[GET VIDEO] id=${id}, duration=${Date.now() - startedAt}ms, found=${Boolean(video)}`,
+    );
 
     if (!video) {
       return res.status(404).json({
         success: false,
-
         code: "VIDEO_NOT_FOUND",
-
         message: "Video not found",
       });
     }
 
+    res.set("Cache-Control", "no-store");
+
     return res.json({
       success: true,
-
       video,
     });
   } catch (error) {
-    console.error("GET VIDEO ERROR:", error);
+    console.error("[GET VIDEO] Error:", error);
 
     return res.status(500).json({
       success: false,
-
       message: "Failed to get video",
     });
   }
