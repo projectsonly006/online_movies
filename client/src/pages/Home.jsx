@@ -25,7 +25,7 @@ function Home() {
 
       const data = await response.json();
 
-      console.log("AVAILABLE VIDEOS:", data);
+      // console.log("AVAILABLE VIDEOS:", data); // available videos in logs
 
       if (!response.ok) {
         throw new Error(data.message || "Failed to load videos");
