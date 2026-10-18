@@ -1679,49 +1679,29 @@ export const deleteVideo = async (req, res) => {
   }
 };
 
-export const checkVideoFiles = async (req, res) => {
+export const getVideoMetadata = async (req, res) => {
   try {
-    const videos = await Video.find().select("_id title filename size").lean();
+    const video = await Video.findById(req.params.id);
 
-    const results = await Promise.all(
-      videos.map(async (video) => {
-        const filename = path.basename(video.filename || "");
-        const filePath = path.join(VIDEO_FOLDER, filename);
+    if (!video) {
+      return res.status(404).json({
+        message: "Video not found",
+      });
+    }
 
-        try {
-          const stats = await fs.promises.stat(filePath);
-
-          return {
-            id: video._id,
-            title: video.title,
-            filename,
-            exists: stats.isFile(),
-            actualSize: stats.size,
-            expectedSize: video.size,
-            path: filePath,
-          };
-        } catch (error) {
-          return {
-            id: video._id,
-            title: video.title,
-            filename,
-            exists: false,
-            error: error.code || error.message,
-            path: filePath,
-          };
-        }
-      }),
-    );
-
-    return res.json({
-      success: true,
-      videoFolder: VIDEO_FOLDER,
-      results,
+    res.json({
+      _id: video._id,
+      title: video.title,
+      duration: video.duration,
+      videoUrl: video.videoUrl,
+      filename: video.filename,
+      format: video.format,
     });
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message,
+    console.error("Video metadata error:", error);
+
+    res.status(500).json({
+      message: "Failed to fetch video metadata",
     });
   }
 };
