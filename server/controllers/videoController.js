@@ -1251,7 +1251,7 @@ export const createLocalVideo = async (req, res) => {
       stats = await fs.promises.stat(filePath);
       console.log("FILE EXISTS:", stats.isFile());
       console.log("FILE SIZE:", stats.size);
-      console.log("EXPECTED SIZE FROM DB:", video.size);
+      console.log("EXPECTED SIZE FROM DB:", Number(size) || 0);
       console.log("FILE MODIFIED:", stats.mtime);
     } catch {
       return res.status(404).json({
