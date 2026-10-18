@@ -17,7 +17,9 @@ import { setProgress, getProgress } from "../utils/downloadProgress.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const VIDEO_FOLDER = path.join(__dirname, "..", "videos");
+const VIDEO_FOLDER = path.resolve(
+  process.env.VIDEO_STORAGE_DIR || path.join(process.cwd(), "data", "videos"),
+);
 
 const SERVER_URL =
   process.env.SERVER_URL || "https://online-movies-uebc.onrender.com";
