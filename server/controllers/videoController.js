@@ -17,7 +17,7 @@ import { setProgress, getProgress } from "../utils/downloadProgress.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const VIDEO_FOLDER = path.join(__dirname, "..", "videos");
+const VIDEO_FOLDER = path.join(__dirname, "data", "videos");
 
 const SERVER_URL =
   process.env.SERVER_URL || "https://online-movies-uebc.onrender.com";
@@ -25,6 +25,8 @@ const SERVER_URL =
 await fs.promises.mkdir(VIDEO_FOLDER, {
   recursive: true,
 });
+
+console.log("VIDEO_FOLDER:", VIDEO_FOLDER);
 
 // ======================================================
 // MULTER
