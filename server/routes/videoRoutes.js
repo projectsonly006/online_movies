@@ -12,7 +12,6 @@ import {
   deleteVideo,
   getDownloadProgress,
   streamVideo,
-  getVideoMetadata,
 } from "../controllers/videoController.js";
 
 import { adminAuth } from "../middleware/adminAuth.js";
@@ -50,9 +49,6 @@ router.delete("/:id", adminAuth, deleteVideo);
 
 // Get all videos
 router.get("/", getVideos);
-
-// Video metadata
-router.get("/:id/metadata", getVideoMetadata);
 
 // Stream local video
 router.get("/stream/:id", streamVideo);
