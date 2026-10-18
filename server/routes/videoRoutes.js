@@ -12,6 +12,7 @@ import {
   deleteVideo,
   getDownloadProgress,
   streamVideo,
+  checkVideoFiles,
 } from "../controllers/videoController.js";
 
 import { adminAuth } from "../middleware/adminAuth.js";
@@ -36,6 +37,9 @@ router.post("/create-watchable", adminAuth, createWatchableFromWeTransfer);
 
 // Download progress
 router.get("/download-progress/:jobId", adminAuth, getDownloadProgress);
+
+// Diagnose saved video files (temporary)
+router.get("/diagnostics/video-files", adminAuth, checkVideoFiles);
 
 // Update video
 router.put("/:id", adminAuth, updateVideo);

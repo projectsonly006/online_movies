@@ -1678,3 +1678,50 @@ export const deleteVideo = async (req, res) => {
     });
   }
 };
+
+export const checkVideoFiles = async (req, res) => {
+  try {
+    const videos = await Video.find().select("_id title filename size").lean();
+
+    const results = await Promise.all(
+      videos.map(async (video) => {
+        const filename = path.basename(video.filename || "");
+        const filePath = path.join(VIDEO_FOLDER, filename);
+
+        try {
+          const stats = await fs.promises.stat(filePath);
+
+          return {
+            id: video._id,
+            title: video.title,
+            filename,
+            exists: stats.isFile(),
+            actualSize: stats.size,
+            expectedSize: video.size,
+            path: filePath,
+          };
+        } catch (error) {
+          return {
+            id: video._id,
+            title: video.title,
+            filename,
+            exists: false,
+            error: error.code || error.message,
+            path: filePath,
+          };
+        }
+      }),
+    );
+
+    return res.json({
+      success: true,
+      videoFolder: VIDEO_FOLDER,
+      results,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
