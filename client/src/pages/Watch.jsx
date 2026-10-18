@@ -68,7 +68,7 @@ function Watch() {
 
         const url = api(`/api/videos/${id}`);
 
-        console.log("VIDEO API URL:", url);
+        // console.log("VIDEO API URL:", url);
 
         const response = await fetch(url, {
           method: "GET",
@@ -86,8 +86,8 @@ function Watch() {
           data = {};
         }
 
-        console.log("VIDEO API STATUS:", response.status);
-        console.log("VIDEO API RESPONSE:", data);
+        // console.log("VIDEO API STATUS:", response.status);
+        // console.log("VIDEO API RESPONSE:", data);
 
         if (cancelled) {
           return;
@@ -124,12 +124,12 @@ function Watch() {
         // ==================================================
 
         if (!data?.video) {
-          console.error("VIDEO OBJECT MISSING:", data);
+          // console.error("VIDEO OBJECT MISSING:", data);
 
           throw new Error("The server did not return valid video information.");
         }
 
-        console.log("VIDEO OBJECT:", data.video);
+        // console.log("VIDEO OBJECT:", data.video);
 
         setVideo(data.video);
       } catch (error) {
@@ -258,9 +258,9 @@ function Watch() {
 
     const duration = videoElement.duration;
 
-    console.log("VIDEO METADATA LOADED");
-    console.log("DURATION:", duration);
-    console.log("VIDEO SRC:", videoElement.currentSrc);
+    // console.log("VIDEO METADATA LOADED");
+    // console.log("DURATION:", duration);
+    // console.log("VIDEO SRC:", videoElement.currentSrc);
 
     if (Number.isFinite(duration) && duration > 0) {
       setVideoDuration(duration);
