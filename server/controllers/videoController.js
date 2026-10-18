@@ -1076,6 +1076,12 @@ export const streamVideo = async (req, res) => {
     const filename = path.basename(video.filename);
     const filePath = path.join(VIDEO_FOLDER, filename);
 
+    console.log("STREAM FILE CHECK:", {
+      id,
+      filePath,
+      exists: fs.existsSync(filePath),
+    });
+
     let stats;
 
     try {
