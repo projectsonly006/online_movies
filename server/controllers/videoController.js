@@ -931,14 +931,14 @@ export const createWatchableFromWeTransfer = async (req, res) => {
       videoId: newVideo._id.toString(),
     });
 
-    console.log("=================================");
-    console.log("VIDEO READY");
-    console.log("=================================");
-    console.log("VIDEO ID:", newVideo._id);
-    console.log("VIDEO URL:", videoUrl);
-    console.log("FILE:", safeFilename);
-    console.log("SIZE:", stats.size);
-    console.log("DURATION:", actualDuration);
+    // console.log("=================================");
+    // console.log("VIDEO READY");
+    // console.log("=================================");
+    // console.log("VIDEO ID:", newVideo._id);
+    // console.log("VIDEO URL:", videoUrl);
+    // console.log("FILE:", safeFilename);
+    // console.log("SIZE:", stats.size);
+    // console.log("DURATION:", actualDuration);
 
     return res.status(201).json({
       success: true,

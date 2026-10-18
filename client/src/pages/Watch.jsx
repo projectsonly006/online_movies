@@ -52,10 +52,10 @@ function Watch() {
         setVideoExpired(false);
         setVideo(null);
 
-        console.log("=================================");
-        console.log("LOADING VIDEO");
-        console.log("VIDEO ID:", id);
-        console.log("=================================");
+        // console.log("=================================");
+        // console.log("LOADING VIDEO");
+        // console.log("VIDEO ID:", id);
+        // console.log("=================================");
 
         if (!id) {
           setError("Video ID is missing.");
