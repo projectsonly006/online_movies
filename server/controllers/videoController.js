@@ -1539,11 +1539,23 @@ export const createVideoFromUrl = async (req, res) => {
 // ======================================================
 
 export const getVideos = async (req, res) => {
+  const startedAt = Date.now();
+
   try {
+    console.log("[GET VIDEOS] Request received");
+
+    const dbStartedAt = Date.now();
+
     const videos = await Video.find()
-      .select("-sourceUrl -createdAt -updatedAt -publicId")
+      .select("_id title thumbnailUrl available duration cbc createdAt")
       .sort({ createdAt: -1 })
       .lean();
+
+    console.log(`[GET VIDEOS] Database query: ${Date.now() - dbStartedAt} ms`);
+
+    res.set("Cache-Control", "no-store");
+
+    console.log(`[GET VIDEOS] Total server time: ${Date.now() - startedAt} ms`);
 
     return res.json({
       success: true,
@@ -1551,7 +1563,7 @@ export const getVideos = async (req, res) => {
       count: videos.length,
     });
   } catch (error) {
-    console.error("GET VIDEOS ERROR:", error);
+    console.error("[GET VIDEOS] Error:", error);
 
     return res.status(500).json({
       success: false,
