@@ -24,9 +24,23 @@ const VIDEO_FOLDER = path.resolve(
 const SERVER_URL =
   process.env.SERVER_URL || "https://online-movies-uebc.onrender.com";
 
-await fs.promises.mkdir(VIDEO_FOLDER, {
-  recursive: true,
-});
+try {
+  await fs.promises.mkdir(VIDEO_FOLDER, {
+    recursive: true,
+  });
+
+  await fs.promises.access(VIDEO_FOLDER, fs.constants.W_OK);
+
+  console.log("[VIDEO STORAGE READY]", VIDEO_FOLDER);
+} catch (error) {
+  console.error("[VIDEO STORAGE ERROR]", {
+    path: VIDEO_FOLDER,
+    code: error.code,
+    message: error.message,
+  });
+
+  throw error;
+}
 
 // ======================================================
 // MULTER
