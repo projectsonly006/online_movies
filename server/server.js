@@ -21,7 +21,7 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const videoFolder = path.join(__dirname, "videos");
+const videoFolder = process.env.VIDEO_FOLDER || path.join(__dirname, "videos");
 
 await fs.promises.mkdir(videoFolder, {
   recursive: true,
